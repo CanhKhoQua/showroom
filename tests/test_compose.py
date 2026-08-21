@@ -22,6 +22,23 @@ def test_soft_clip_leaves_midtones_alone():
     assert np.allclose(soft_clip(v.copy()), v, atol=1e-3)
 
 
+def test_soft_clip_compresses_above_the_knee_rather_than_clamping():
+    """The discriminating test. Every other soft_clip test here also passes
+    against a plain np.clip(v, 0, 255), so without this one the roll-off has
+    no regression cover at all -- and losing the roll-off returns the render
+    to flat blown highlights with the tile veining erased.
+    """
+    # Just above the knee (0.80 * 255 = 204): compressed, but not clamped.
+    above_knee = float(soft_clip(np.array([220.0], np.float32))[0])
+    assert 204.0 < above_knee < 220.0
+
+    # Far above white: a clamp yields exactly 255; the roll-off asymptotes
+    # toward it and must stay strictly below.
+    far = float(soft_clip(np.array([400.0], np.float32))[0])
+    assert far < 254.9
+    assert far > above_knee
+
+
 def test_lighting_gain_is_centred_on_one_inside_the_mask():
     base = room_with_objects()
     mask = quad_mask_of(base.shape, QUAD)
