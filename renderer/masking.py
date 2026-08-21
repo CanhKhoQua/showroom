@@ -8,10 +8,10 @@ why white sanitaryware rooms are routed to pre-built sample scenes instead.
 import cv2
 import numpy as np
 
-from renderer.geometry import near_edge_band, quad_mask_of
+from renderer.geometry import Quad, near_edge_band, quad_mask_of
 
 
-def drop_small_components(mask, min_area):
+def drop_small_components(mask: np.ndarray, min_area: int) -> np.ndarray:
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
     out = np.zeros_like(mask)
     for i in range(1, count):
@@ -20,8 +20,10 @@ def drop_small_components(mask, min_area):
     return out
 
 
-def floor_mask_by_colour_deviation(base_bgr, quad, quad_mask, threshold=13.0,
-                                   lightness_weight=0.15, min_object_area=400):
+def floor_mask_by_colour_deviation(base_bgr: np.ndarray, quad: Quad,
+                                   quad_mask: np.ndarray, threshold: float = 13.0,
+                                   lightness_weight: float = 0.15,
+                                   min_object_area: int = 400) -> np.ndarray:
     """One-class model: learn floor colour from the near-edge strip, then mark
     deviating pixels as objects.
 
@@ -50,7 +52,9 @@ def floor_mask_by_colour_deviation(base_bgr, quad, quad_mask, threshold=13.0,
     return cv2.bitwise_and(quad_mask, cv2.bitwise_not(objects))
 
 
-def build_mask(base_bgr, quad, exclude=None, auto="none", threshold=13.0):
+def build_mask(base_bgr: np.ndarray, quad: Quad,
+               exclude: list[list[tuple[float, float]]] | None = None,
+               auto: str = "none", threshold: float = 13.0) -> np.ndarray:
     """Floor quad, minus hand-drawn polygons, minus whatever `auto` detects."""
     quad_mask = quad_mask_of(base_bgr.shape, quad)
     mask = quad_mask.copy()
