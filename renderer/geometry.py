@@ -5,24 +5,26 @@ Quad order is FAR-LEFT, FAR-RIGHT, NEAR-RIGHT, NEAR-LEFT everywhere.
 import cv2
 import numpy as np
 
+Quad = list[tuple[float, float]]
 
-def quad_mask_of(shape, quad):
+
+def quad_mask_of(shape: tuple, quad: Quad) -> np.ndarray:
     mask = np.zeros(shape[:2], np.uint8)
     cv2.fillConvexPoly(mask, np.int32(quad), 255)
     return mask
 
 
-def sheet_to_photo_homography(sheet_shape, quad):
+def sheet_to_photo_homography(sheet_shape: tuple, quad: Quad) -> np.ndarray:
     height, width = sheet_shape[:2]
     src = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
     return cv2.getPerspectiveTransform(src, np.float32(quad))
 
 
-def lerp(a, b, t):
+def lerp(a: tuple[float, float], b: tuple[float, float], t: float) -> tuple[float, float]:
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
 
 
-def near_edge_band(quad, quad_mask, depth=0.14):
+def near_edge_band(quad: Quad, quad_mask: np.ndarray, depth: float = 0.14) -> np.ndarray:
     """Strip along the NEAR edge. Assumption: this is certainly bare floor.
 
     Used as the seed for the colour model in renderer.masking.

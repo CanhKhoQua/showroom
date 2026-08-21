@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 
-def paste(dst, src, x, y):
+def paste(dst: np.ndarray, src: np.ndarray, x: int, y: int) -> None:
     """Paste src into dst at (x, y), clipping whatever falls outside."""
     h_dst, w_dst = dst.shape[:2]
     h_src, w_src = src.shape[:2]
@@ -14,8 +14,11 @@ def paste(dst, src, x, y):
     dst[y0:y1, x0:x1] = src[y0 - y:y1 - y, x0 - x:x1 - x]
 
 
-def build_tile_sheet(faces, tile_mm, floor_mm, px_per_mm, layout="grid",
-                     grout_mm=2.0, grout_bgr=(205, 205, 205), seed=7):
+def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
+                     floor_mm: tuple[float, float], px_per_mm: float,
+                     layout: str = "grid", grout_mm: float = 2.0,
+                     grout_bgr: tuple[int, int, int] = (205, 205, 205),
+                     seed: int = 7) -> np.ndarray:
     """Top-down BGR image of the tiled floor, before any perspective.
 
     faces must be the distinct printed faces of ONE sku. Stone-look tiles ship

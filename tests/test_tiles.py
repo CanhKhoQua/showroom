@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from renderer.tiles import build_tile_sheet
 
 
