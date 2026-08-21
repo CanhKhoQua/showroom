@@ -1,0 +1,124 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Render bench</title>
+<style>
+  body { font: 14px system-ui; margin: 16px; background:#111; color:#eee; }
+  #wrap { position: relative; display: inline-block; }
+  canvas { max-width: 100%; cursor: crosshair; border:1px solid #444; }
+  .row { margin: 8px 0; }
+  label { margin-right: 12px; }
+  input[type=number] { width: 84px; }
+  #result { max-width: 100%; border:1px solid #444; margin-top:12px; }
+  .hint { color:#9ab; }
+</style>
+
+<h2>Render bench</h2>
+<p class="hint">Click the four floor corners in this order:
+  <b>far-left, far-right, near-right, near-left</b>. Shift-drag to paint an
+  exclusion area over anything standing on the floor.</p>
+
+<div class="row">
+  <label>Photo <input type="file" id="photo" accept="image/*"></label>
+  <label>Texture faces <input type="file" id="faces" accept="image/*" multiple></label>
+</div>
+<div class="row">
+  <label>Tile mm <input type="number" id="tileW" value="600"> ×
+    <input type="number" id="tileD" value="600"></label>
+  <label>Floor mm <input type="number" id="floorW" value="4200"> ×
+    <input type="number" id="floorD" value="3200"></label>
+</div>
+<div class="row">
+  <label>Grout mm <input type="number" id="groutMm" value="2" step="0.5"></label>
+  <label>Layout <select id="layout"><option>grid</option><option>brick</option></select></label>
+  <label>Auto mask <select id="auto">
+    <option value="none">none</option>
+    <option value="colour-deviation">colour-deviation</option></select></label>
+  <button id="go">Render</button>
+  <button id="reset">Clear points</button>
+</div>
+
+<div id="wrap"><canvas id="cv"></canvas></div>
+<img id="result" hidden>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let img = null, quad = [], strokes = [], painting = null;
+
+document.getElementById('photo').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const i = new Image();
+  i.onload = () => { img = i; cv.width = i.width; cv.height = i.height;
+                     quad = []; strokes = []; draw(); };
+  i.src = URL.createObjectURL(f);
+};
+
+function pos(ev) {
+  const r = cv.getBoundingClientRect();
+  return [Math.round((ev.clientX - r.left) * cv.width / r.width),
+          Math.round((ev.clientY - r.top) * cv.height / r.height)];
+}
+
+cv.onmousedown = ev => {
+  if (!img) return;
+  if (ev.shiftKey) { painting = [pos(ev)]; strokes.push(painting); }
+  else if (quad.length < 4) { quad.push(pos(ev)); draw(); }
+};
+cv.onmousemove = ev => { if (painting) { painting.push(pos(ev)); draw(); } };
+window.onmouseup = () => { painting = null; };
+
+document.getElementById('reset').onclick = () => { quad = []; strokes = []; draw(); };
+
+function draw() {
+  if (!img) return;
+  ctx.drawImage(img, 0, 0);
+  ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.fillStyle = '#0f0';
+  quad.forEach(([x, y], n) => {
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+    ctx.fillText(String(n + 1), x + 10, y - 10);
+  });
+  if (quad.length === 4) {
+    ctx.beginPath(); ctx.moveTo(...quad[0]);
+    quad.slice(1).forEach(p => ctx.lineTo(...p));
+    ctx.closePath(); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,80,80,.85)'; ctx.lineWidth = 26;
+  ctx.lineJoin = ctx.lineCap = 'round';
+  strokes.forEach(s => {
+    ctx.beginPath(); ctx.moveTo(...s[0]);
+    s.slice(1).forEach(p => ctx.lineTo(...p)); ctx.stroke();
+  });
+}
+
+// A painted stroke becomes an exclusion polygon: the stroke path out, then
+// back offset by the brush radius. Crude but it is a free-form region, which
+// is what the spec requires instead of rectangles.
+function strokeToPolygon(s, r = 13) {
+  return s.map(([x, y]) => [x, y - r]).concat(s.slice().reverse().map(([x, y]) => [x, y + r]));
+}
+
+document.getElementById('go').onclick = async () => {
+  if (quad.length !== 4) return alert('Click exactly 4 corners first.');
+  const faces = document.getElementById('faces').files;
+  if (!faces.length) return alert('Pick at least one texture face.');
+  const num = id => Number(document.getElementById(id).value);
+
+  const fd = new FormData();
+  fd.append('photo', document.getElementById('photo').files[0]);
+  for (const f of faces) fd.append('faces', f);
+  fd.append('payload', JSON.stringify({
+    quad,
+    tile_mm: [num('tileW'), num('tileD')],
+    floor_mm: [num('floorW'), num('floorD')],
+    grout_mm: num('groutMm'),
+    layout: document.getElementById('layout').value,
+    auto: document.getElementById('auto').value,
+    exclude: strokes.filter(s => s.length > 1).map(s => strokeToPolygon(s)),
+  }));
+
+  const r = await fetch('/render', { method: 'POST', body: fd });
+  if (!r.ok) return alert('Render failed: ' + r.status + ' ' + await r.text());
+  const out = document.getElementById('result');
+  out.src = URL.createObjectURL(await r.blob());
+  out.hidden = false;
+};
+</script>
