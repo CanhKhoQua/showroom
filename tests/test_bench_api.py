@@ -3,12 +3,16 @@ import json
 
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
+from pillow_heif import register_heif_opener
 
 from bench.app import app
 from tests.fixtures import QUAD, room_with_objects
 
 client = TestClient(app)
+register_heif_opener()
 
 
 def photo_bytes():
@@ -23,6 +27,16 @@ def face_bytes(value=235):
     return io.BytesIO(buf.tobytes())
 
 
+def heic_bytes():
+    image = Image.new("RGB", (64, 48), (15, 30, 220))
+    image.paste((20, 200, 50), (32, 0, 64, 48))
+    exif = Image.Exif()
+    exif[274] = 6
+    raw = io.BytesIO()
+    image.save(raw, format="HEIF", quality=100, exif=exif.tobytes())
+    return raw.getvalue()
+
+
 def payload(**over):
     body = {"quad": QUAD, "tile_mm": [600, 600], "floor_mm": [4200, 3200],
             "grout_mm": 2.0, "grout_bgr": [205, 205, 205], "layout": "grid",
@@ -35,6 +49,32 @@ def test_index_page_is_served():
     r = client.get("/")
     assert r.status_code == 200
     assert "canvas" in r.text.lower()
+
+
+@pytest.mark.parametrize("filename, media_types", [
+    ("styles.css", {"text/css"}),
+    ("app.js", {"text/javascript", "application/javascript"}),
+])
+def test_browser_assets_are_served(filename, media_types):
+    r = client.get(f"/static/{filename}")
+    assert r.status_code == 200
+    assert r.headers["content-type"].split(";")[0] in media_types
+    assert r.content
+
+
+def test_demo_room_is_served_as_a_useful_colour_photo():
+    r = client.get("/static/demo-room.jpg")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    image = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert image is not None
+    assert image.ndim == 3 and image.shape[2] == 3
+    assert image.shape[0] >= 600 and image.shape[1] >= 900
+
+
+def test_missing_static_asset_returns_not_found():
+    r = client.get("/static/missing-asset.png")
+    assert r.status_code == 404
 
 
 def test_render_returns_a_png_the_same_size_as_the_photo():
@@ -58,6 +98,34 @@ def test_render_actually_changes_the_floor():
     assert out[770, 600].mean() > base[770, 600].mean()
 
 
+def test_render_accepts_a_six_point_floor_outline_without_painting_its_notch():
+    base = np.full((300, 400, 3), 120, np.uint8)
+    _, encoded = cv2.imencode(".png", base)
+    boundary = [[20, 20], [180, 20], [180, 140], [380, 140],
+                [380, 280], [20, 280]]
+    r = client.post("/render",
+                    files={"photo": ("room.png", encoded.tobytes(), "image/png"),
+                           "faces": ("f1.png", face_bytes(), "image/png")},
+                    data={"payload": payload(
+                        quad=[[20, 20], [380, 20], [380, 280], [20, 280]],
+                        floor_boundary=boundary)})
+
+    assert r.status_code == 200
+    out = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+    assert np.array_equal(out[40:120, 220:360], base[40:120, 220:360])
+    assert out[220, 300].mean() > 200
+    assert out[80, 100].mean() > 200
+
+
+def test_incomplete_floor_outline_is_rejected():
+    r = client.post("/render",
+                    files={"photo": ("room.png", photo_bytes(), "image/png"),
+                           "faces": ("f1.png", face_bytes(), "image/png")},
+                    data={"payload": payload(floor_boundary=[[0, 0], [10, 10]])})
+    assert r.status_code == 422
+    assert "3 points" in r.json()["detail"]
+
+
 def test_quad_with_wrong_point_count_is_rejected():
     r = client.post("/render",
                     files={"photo": ("room.png", photo_bytes(), "image/png"),
@@ -79,3 +147,86 @@ def test_missing_photo_is_rejected():
                     files={"faces": ("f1.png", face_bytes(), "image/png")},
                     data={"payload": payload()})
     assert r.status_code == 422
+
+
+def test_heic_upload_becomes_an_upright_colour_png():
+    r = client.post("/image", files={"file": ("phone.HEIC", heic_bytes(),
+                                             "image/heic")})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    out = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+    assert out.shape == (64, 48, 3)
+    assert np.abs(out[8, 24].astype(int) - [220, 30, 15]).max() < 10
+    assert np.abs(out[56, 24].astype(int) - [50, 200, 20]).max() < 10
+
+
+def test_image_upload_preserves_a_png():
+    r = client.post("/image", files={"file": ("room.png", photo_bytes(),
+                                             "image/png")})
+    assert r.status_code == 200
+    out = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+    assert np.array_equal(out, room_with_objects())
+
+
+def test_floor_detection_runs_the_real_model_on_the_demo_room():
+    from bench.app import STATIC
+
+    r = client.post("/detect-floor", files={"photo": (
+        "room.jpg", (STATIC / "demo-room.jpg").read_bytes(), "image/jpeg")})
+
+    assert r.status_code == 200
+    result = r.json()
+    assert len(result["floor_boundary"]) >= 3
+    assert result["seconds"] > 0
+    assert result["exclude"] == [] or all(len(poly) >= 3 for poly in result["exclude"])
+    base = cv2.imread(str(STATIC / "demo-room.jpg"))
+    from renderer.masking import build_mask
+    h, w = base.shape[:2]
+    mask = build_mask(base, [(0, 0), (w - 1, 0), (w - 1, h - 1), (0, h - 1)],
+                      floor_boundary=result["floor_boundary"],
+                      exclude=result["exclude"])
+    assert mask[100, 400] == 0
+    assert 0.05 < (mask > 0).mean() < 0.6
+
+
+def test_floor_detection_suggests_a_perspective_plane_around_the_outline():
+    from bench.app import STATIC
+
+    r = client.post("/detect-floor", files={"photo": (
+        "room.jpg", (STATIC / "demo-room.jpg").read_bytes(), "image/jpeg")})
+
+    plane = r.json()["plane"]
+    quad = np.float32(plane["quad"])
+    assert quad.shape == (4, 2)
+    assert plane["source"] in {"vertical-lines", "default"}
+    assert all(0 < v <= 31000 for v in plane["floor_mm"])
+    # Perspective: the far edge is narrower on screen than the near edge.
+    assert np.linalg.norm(quad[1] - quad[0]) < np.linalg.norm(quad[2] - quad[3])
+    for point in r.json()["floor_boundary"]:
+        assert cv2.pointPolygonTest(quad, tuple(map(float, point)), True) >= -1
+
+
+def test_floor_detection_rejects_an_invalid_photo():
+    r = client.post("/detect-floor", files={"photo": (
+        "broken.heic", b"not an image", "image/heic")})
+    assert r.status_code == 422
+    assert "decode" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("raw", [b"not an image", b""])
+def test_invalid_heic_upload_returns_a_useful_error(raw):
+    r = client.post("/image", files={"file": ("broken.heic", raw,
+                                             "image/heic")})
+    assert r.status_code == 422
+    assert "decode" in r.json()["detail"]
+
+
+def test_render_accepts_an_original_heic_photo():
+    r = client.post("/render",
+                    files={"photo": ("room.heic", heic_bytes(), "image/heic"),
+                           "faces": ("f1.png", face_bytes(), "image/png")},
+                    data={"payload": payload(
+                        quad=[[0, 40], [47, 40], [47, 63], [0, 63]])})
+    assert r.status_code == 200
+    out = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+    assert out.shape == (64, 48, 3)

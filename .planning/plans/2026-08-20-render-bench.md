@@ -46,6 +46,7 @@ cat > requirements.txt <<'EOF'
 opencv-python>=5.0,<6
 numpy>=2.5,<3
 fastapi>=0.138,<1
+python-multipart>=0.0.9
 uvicorn>=0.49,<1
 pytest>=8
 httpx>=0.27
@@ -68,7 +69,7 @@ testpaths = tests
 EOF
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_tiles.py
@@ -127,7 +128,7 @@ def test_brick_layout_differs_from_grid():
 Run: `.venv/bin/pytest tests/test_tiles.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer'`
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 ```python
 # renderer/__init__.py
@@ -187,7 +188,7 @@ def build_tile_sheet(faces, tile_mm, floor_mm, px_per_mm, layout="grid",
     return sheet
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_tiles.py -v`
 Expected: 6 passed
@@ -216,7 +217,7 @@ git commit -m "feat(renderer): tile sheet builder at true physical scale"
   - `near_edge_band(quad: Quad, quad_mask: np.ndarray, depth: float = 0.14) -> np.ndarray` — uint8 mask, 0 or 255
   - `quad_mask_of(shape: tuple, quad: Quad) -> np.ndarray` — uint8 mask of the filled quad
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_geometry.py
@@ -271,7 +272,7 @@ def test_deeper_band_covers_more_area():
 Run: `.venv/bin/pytest tests/test_geometry.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer.geometry'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # renderer/geometry.py
@@ -311,7 +312,7 @@ def near_edge_band(quad, quad_mask, depth=0.14):
     return cv2.bitwise_and(strip, quad_mask)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_geometry.py -v`
 Expected: 5 passed
@@ -339,7 +340,7 @@ git commit -m "feat(renderer): homography and near-edge band"
   - `floor_mask_by_colour_deviation(base_bgr, quad, quad_mask, threshold=13.0, lightness_weight=0.15, min_object_area=400) -> np.ndarray`
   - `drop_small_components(mask: np.ndarray, min_area: int) -> np.ndarray`
 
-- [ ] **Step 1: Write the shared fixture and the failing test**
+- [x] **Step 1: Write the shared fixture and the failing test**
 
 ```python
 # tests/fixtures.py
@@ -497,7 +498,7 @@ def test_drop_small_components_removes_specks_and_keeps_blobs():
 Run: `.venv/bin/pytest tests/test_masking.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer.masking'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # renderer/masking.py
@@ -572,7 +573,7 @@ def build_mask(base_bgr: np.ndarray, quad: Quad,
     return mask
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_masking.py -v`
 Expected: 7 passed
@@ -599,7 +600,7 @@ git commit -m "feat(renderer): floor masking with hand-drawn exclusions"
   - `lighting_gain(base_bgr, mask, sigma: float = 41.0, lo: float = 0.55, hi: float = 1.35) -> np.ndarray`
   - `render(base_bgr, sheet, quad, mask=None, strength: float = 1.0, feather: float = 2.0) -> np.ndarray` — returns the composited BGR image only
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_compose.py
@@ -690,7 +691,7 @@ def test_excluded_region_is_not_painted_over():
 Run: `.venv/bin/pytest tests/test_compose.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer.compose'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # renderer/compose.py
@@ -743,7 +744,7 @@ def render(base_bgr: np.ndarray, sheet: np.ndarray, quad: Quad,
     return out.astype(np.uint8)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_compose.py -v`
 Expected: 9 passed
@@ -771,7 +772,7 @@ git commit -m "feat(renderer): relight and blend the warped tile sheet"
   - `load_registry(path: str | Path) -> dict[str, Sku]`
   - `load_faces(sku: Sku, root: str | Path) -> list[np.ndarray]`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_catalogue.py
@@ -837,7 +838,7 @@ def test_load_faces_fails_loudly_on_a_missing_file(tmp_path):
 Run: `.venv/bin/pytest tests/test_catalogue.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer.catalogue'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # renderer/catalogue.py
@@ -898,7 +899,7 @@ JSON, so the explanation lives here in the plan, not in the file.
 {}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_catalogue.py -v`
 Expected: 5 passed
@@ -923,7 +924,7 @@ git commit -m "feat(renderer): texture registry with declared physical size"
 - Consumes: everything from Tasks 1-5
 - Produces: `POST /render` (multipart: `photo` file, `payload` JSON string) returning `image/png`; `GET /` returning the picker page
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_bench_api.py
@@ -1015,7 +1016,7 @@ def test_missing_photo_is_rejected():
 Run: `.venv/bin/pytest tests/test_bench_api.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'bench'`
 
-- [ ] **Step 3: Write the API**
+- [x] **Step 3: Write the API**
 
 ```python
 # bench/app.py
@@ -1099,7 +1100,7 @@ async def do_render(payload: str = Form(...),
     return Response(buf.tobytes(), media_type="image/png")
 ```
 
-- [ ] **Step 4: Write the picker page**
+- [x] **Step 4: Write the picker page**
 
 ```html
 <!-- bench/static/index.html -->
@@ -1229,24 +1230,24 @@ document.getElementById('go').onclick = async () => {
 </script>
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_bench_api.py -v`
 Expected: 6 passed
 
-- [ ] **Step 6: Run the whole suite**
+- [x] **Step 6: Run the whole suite**
 
 Run: `.venv/bin/pytest -q`
 Expected: 38 passed
 
-- [ ] **Step 7: Start the bench and confirm it loads**
+- [x] **Step 7: Start the bench and confirm it loads**
 
 ```bash
 .venv/bin/uvicorn bench.app:app --port 8100
 ```
 Open `http://127.0.0.1:8100`. Load a photo, click four corners, pick a texture, press Render.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add bench/ tests/test_bench_api.py

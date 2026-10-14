@@ -1,0 +1,102 @@
+[
+  {
+    "id": "limestone",
+    "name": "Ivory limestone",
+    "size": [
+      333,
+      333
+    ],
+    "grout": "#aea695",
+    "gap": 2,
+    "finish": "Soft & warm",
+    "layout": "grid",
+    "publisher": "ambientCG",
+    "asset_id": "Tiles139",
+    "source": "https://ambientcg.com/view?id=Tiles139",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "original_download": "https://ambientcg.com/get?file=Tiles139_2K-JPG.zip",
+    "original_file": "Tiles139_2K-JPG_Color.jpg",
+    "faces": [
+      "/static/materials/limestone-01.jpg",
+      "/static/materials/limestone-02.jpg",
+      "/static/materials/limestone-03.jpg",
+      "/static/materials/limestone-04.jpg"
+    ]
+  },
+  {
+    "id": "concrete",
+    "name": "Soft concrete",
+    "size": [
+      800,
+      800
+    ],
+    "grout": "#aaa99e",
+    "gap": 2,
+    "finish": "Quiet & minimal",
+    "layout": "grid",
+    "publisher": "ambientCG",
+    "asset_id": "Concrete048",
+    "source": "https://ambientcg.com/view?id=Concrete048",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "original_download": "https://ambientcg.com/get?file=Concrete048_1K-JPG.zip",
+    "original_file": "Concrete048_1K-JPG_Color.jpg",
+    "faces": [
+      "/static/materials/concrete-01.jpg",
+      "/static/materials/concrete-02.jpg",
+      "/static/materials/concrete-03.jpg",
+      "/static/materials/concrete-04.jpg"
+    ]
+  },
+  {
+    "id": "basalt",
+    "name": "Charcoal stone",
+    "size": [
+      600,
+      600
+    ],
+    "grout": "#555950",
+    "gap": 2,
+    "finish": "Deep & grounded",
+    "layout": "grid",
+    "publisher": "ambientCG",
+    "asset_id": "Tiles138",
+    "source": "https://ambientcg.com/view?id=Tiles138",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "original_download": "https://ambientcg.com/get?file=Tiles138_4K-JPG.zip",
+    "original_file": "Tiles138_4K-JPG_Color.jpg",
+    "faces": [
+      "/static/materials/stone-01.jpg",
+      "/static/materials/stone-02.jpg",
+      "/static/materials/stone-03.jpg",
+      "/static/materials/stone-04.jpg"
+    ]
+  },
+  {
+    "id": "oak",
+    "name": "Natural oak",
+    "size": [
+      190,
+      1200
+    ],
+    "grout": "#8c775a",
+    "gap": 1.5,
+    "finish": "Light & natural",
+    "layout": "brick",
+    "publisher": "Poly Haven",
+    "asset_id": "oak_veneer_01",
+    "source": "https://polyhaven.com/a/oak_veneer_01",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "original_download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/oak_veneer_01/oak_veneer_01_diff_2k.jpg",
+    "original_file": "oak_veneer_01_diff_2k.jpg",
+    "faces": [
+      "/static/materials/oak-01.jpg",
+      "/static/materials/oak-02.jpg",
+      "/static/materials/oak-03.jpg",
+      "/static/materials/oak-04.jpg"
+    ]
+  }
+]

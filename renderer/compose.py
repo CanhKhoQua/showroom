@@ -17,17 +17,28 @@ def soft_clip(v: np.ndarray, knee: float = 0.80) -> np.ndarray:
 
 def lighting_gain(base_bgr: np.ndarray, mask: np.ndarray, sigma: float = 41.0,
                   lo: float = 0.55, hi: float = 1.35) -> np.ndarray:
-    """Low-frequency luminance of the original, normalised around 1.0.
+    """Floor-only luminance, with restrained detail from real dark shadows.
 
-    This is what carries the room's real shadows onto the new floor. Blur hard
-    so the OLD floor's texture cannot leak through.
+    Normalised convolution prevents walls and excluded objects from lighting
+    the floor. Both scales smooth away grain; the finer one restores only half
+    of the dark residual, so contact shadows survive without copying texture.
     """
     gray = cv2.cvtColor(base_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    low = cv2.GaussianBlur(gray, (0, 0), sigma)
     selected = mask > 127
     if not selected.any():
-        return np.ones_like(low)
-    return np.clip(low / max(float(low[selected].mean()), 1e-6), lo, hi)
+        return np.ones_like(gray)
+    weights = selected.astype(np.float32)
+
+    def smooth(scale: float) -> np.ndarray:
+        support = cv2.GaussianBlur(weights, (0, 0), scale)
+        luminance = cv2.GaussianBlur(gray * weights, (0, 0), scale)
+        return luminance / np.maximum(support, 1e-6)
+
+    low = smooth(sigma)
+    detail = smooth(max(2.0, sigma / 8.0))
+    shadow = np.minimum(detail / np.maximum(low, 1e-6), 1.0)
+    gain = low / max(float(low[selected].mean()), 1e-6)
+    return np.clip(gain * (0.5 + 0.5 * shadow), lo, hi)
 
 
 def render(base_bgr: np.ndarray, sheet: np.ndarray, quad: Quad,
@@ -42,6 +53,8 @@ def render(base_bgr: np.ndarray, sheet: np.ndarray, quad: Quad,
 
     gain = lighting_gain(base_bgr, mask, sigma=max(9.0, min(height, width) / 18.0))
     lit = soft_clip(warped.astype(np.float32) * (gain[..., None] ** strength))
-    alpha = (cv2.GaussianBlur(mask.astype(np.float32), (0, 0), feather) / 255.0)[..., None]
+    alpha = cv2.GaussianBlur(mask.astype(np.float32), (0, 0), feather) / 255.0
+    alpha[mask == 0] = 0
+    alpha = alpha[..., None]
     out = base_bgr.astype(np.float32) * (1 - alpha) + lit * alpha
     return out.astype(np.uint8)

@@ -4,33 +4,63 @@ Rendering happens server-side here on purpose: this exists to answer whether
 the render looks convincing on a real photo, not to be fast. The spec's
 client-side WebGL swap is a separate plan.
 """
+import io
 import json
+import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageCms, ImageOps
+from pillow_heif import register_heif_opener
+from starlette.concurrency import run_in_threadpool
 
 from renderer.compose import render
+from renderer.floor_detection import detect_floor
+from renderer.floor_plane import estimate_floor_plane
 from renderer.masking import build_mask
 from renderer.tiles import build_tile_sheet
 
 app = FastAPI(title="Render bench")
 STATIC = Path(__file__).parent / "static"
 VALID_AUTO = {"none", "colour-deviation"}
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+register_heif_opener()
 
 
 def _decode(raw: bytes) -> np.ndarray:
+    if not raw:
+        raise HTTPException(422, "could not decode image")
     img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        raise HTTPException(422, "could not decode image")
+        try:
+            with Image.open(io.BytesIO(raw)) as source:
+                rgb = ImageOps.exif_transpose(source).convert("RGB")
+                if profile := source.info.get("icc_profile"):
+                    rgb = ImageCms.profileToProfile(
+                        rgb, ImageCms.ImageCmsProfile(io.BytesIO(profile)),
+                        ImageCms.createProfile("sRGB"), outputMode="RGB")
+                img = cv2.cvtColor(np.asarray(rgb), cv2.COLOR_RGB2BGR)
+        except (OSError, ValueError, ImageCms.PyCMSError) as exc:
+            raise HTTPException(422, "could not decode image") from exc
     return img
 
 
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (STATIC / "index.html").read_text()
+
+
+@app.post("/image")
+async def normalize_image(file: UploadFile = File(...)):
+    image = _decode(await file.read())
+    ok, buf = cv2.imencode(".png", image)
+    if not ok:
+        raise HTTPException(500, "failed to encode image")
+    return Response(buf.tobytes(), media_type="image/png")
 
 
 @app.post("/render")
@@ -46,6 +76,9 @@ async def do_render(payload: str = Form(...),
     if len(quad) != 4:
         raise HTTPException(422, "quad needs exactly 4 points, ordered "
                                  "FAR-LEFT FAR-RIGHT NEAR-RIGHT NEAR-LEFT")
+    floor_boundary = body.get("floor_boundary") or None
+    if floor_boundary is not None and len(floor_boundary) < 3:
+        raise HTTPException(422, "floor boundary needs at least 3 points")
     auto = body.get("auto", "none")
     if auto not in VALID_AUTO:
         raise HTTPException(422, f"auto must be one of {sorted(VALID_AUTO)}")
@@ -68,7 +101,8 @@ async def do_render(payload: str = Form(...),
                       exclude=[[tuple(p) for p in poly]
                                for poly in body.get("exclude", [])],
                       auto=auto,
-                      threshold=float(body.get("threshold", 13.0)))
+                      threshold=float(body.get("threshold", 13.0)),
+                      floor_boundary=floor_boundary)
     out = render(base, sheet, [tuple(p) for p in quad], mask=mask,
                  strength=float(body.get("strength", 1.0)))
 
@@ -76,3 +110,20 @@ async def do_render(payload: str = Form(...),
     if not ok:
         raise HTTPException(500, "failed to encode result")
     return Response(buf.tobytes(), media_type="image/png")
+
+
+@app.post("/detect-floor")
+async def find_floor(photo: UploadFile = File(...)):
+    started = time.perf_counter()
+    base = _decode(await photo.read())
+    try:
+        result = await run_in_threadpool(detect_floor, base)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    plane = await run_in_threadpool(
+        estimate_floor_plane, base, result["floor_boundary"])
+    result["floor_boundary"] = plane.pop("floor_boundary")
+    if len(result["floor_boundary"]) < 3:
+        raise HTTPException(422, "No floor was detected. Use Floor outline to select it manually.")
+    result["plane"] = plane
+    return {**result, "seconds": round(time.perf_counter() - started, 3)}

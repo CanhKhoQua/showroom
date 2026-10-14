@@ -1,124 +1,66 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>Render bench</title>
-<style>
-  body { font: 14px system-ui; margin: 16px; background:#111; color:#eee; }
-  #wrap { position: relative; display: inline-block; }
-  canvas { max-width: 100%; cursor: crosshair; border:1px solid #444; }
-  .row { margin: 8px 0; }
-  label { margin-right: 12px; }
-  input[type=number] { width: 84px; }
-  #result { max-width: 100%; border:1px solid #444; margin-top:12px; }
-  .hint { color:#9ab; }
-</style>
-
-<h2>Render bench</h2>
-<p class="hint">Click the four floor corners in this order:
-  <b>far-left, far-right, near-right, near-left</b>. Shift-drag to paint an
-  exclusion area over anything standing on the floor.</p>
-
-<div class="row">
-  <label>Photo <input type="file" id="photo" accept="image/*"></label>
-  <label>Texture faces <input type="file" id="faces" accept="image/*" multiple></label>
-</div>
-<div class="row">
-  <label>Tile mm <input type="number" id="tileW" value="600"> ×
-    <input type="number" id="tileD" value="600"></label>
-  <label>Floor mm <input type="number" id="floorW" value="4200"> ×
-    <input type="number" id="floorD" value="3200"></label>
-</div>
-<div class="row">
-  <label>Grout mm <input type="number" id="groutMm" value="2" step="0.5"></label>
-  <label>Layout <select id="layout"><option>grid</option><option>brick</option></select></label>
-  <label>Auto mask <select id="auto">
-    <option value="none">none</option>
-    <option value="colour-deviation">colour-deviation</option></select></label>
-  <button id="go">Render</button>
-  <button id="reset">Clear points</button>
-</div>
-
-<div id="wrap"><canvas id="cv"></canvas></div>
-<img id="result" hidden>
-
-<script>
-const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
-let img = null, quad = [], strokes = [], painting = null;
-
-document.getElementById('photo').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  const i = new Image();
-  i.onload = () => { img = i; cv.width = i.width; cv.height = i.height;
-                     quad = []; strokes = []; draw(); };
-  i.src = URL.createObjectURL(f);
-};
-
-function pos(ev) {
-  const r = cv.getBoundingClientRect();
-  return [Math.round((ev.clientX - r.left) * cv.width / r.width),
-          Math.round((ev.clientY - r.top) * cv.height / r.height)];
-}
-
-cv.onmousedown = ev => {
-  if (!img) return;
-  if (ev.shiftKey) { painting = [pos(ev)]; strokes.push(painting); }
-  else if (quad.length < 4) { quad.push(pos(ev)); draw(); }
-};
-cv.onmousemove = ev => { if (painting) { painting.push(pos(ev)); draw(); } };
-window.onmouseup = () => { painting = null; };
-
-document.getElementById('reset').onclick = () => { quad = []; strokes = []; draw(); };
-
-function draw() {
-  if (!img) return;
-  ctx.drawImage(img, 0, 0);
-  ctx.lineWidth = 3; ctx.strokeStyle = '#0f0'; ctx.fillStyle = '#0f0';
-  quad.forEach(([x, y], n) => {
-    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
-    ctx.fillText(String(n + 1), x + 10, y - 10);
-  });
-  if (quad.length === 4) {
-    ctx.beginPath(); ctx.moveTo(...quad[0]);
-    quad.slice(1).forEach(p => ctx.lineTo(...p));
-    ctx.closePath(); ctx.stroke();
-  }
-  ctx.strokeStyle = 'rgba(255,80,80,.85)'; ctx.lineWidth = 26;
-  ctx.lineJoin = ctx.lineCap = 'round';
-  strokes.forEach(s => {
-    ctx.beginPath(); ctx.moveTo(...s[0]);
-    s.slice(1).forEach(p => ctx.lineTo(...p)); ctx.stroke();
-  });
-}
-
-// A painted stroke becomes an exclusion polygon: the stroke path out, then
-// back offset by the brush radius. Crude but it is a free-form region, which
-// is what the spec requires instead of rectangles.
-function strokeToPolygon(s, r = 13) {
-  return s.map(([x, y]) => [x, y - r]).concat(s.slice().reverse().map(([x, y]) => [x, y + r]));
-}
-
-document.getElementById('go').onclick = async () => {
-  if (quad.length !== 4) return alert('Click exactly 4 corners first.');
-  const faces = document.getElementById('faces').files;
-  if (!faces.length) return alert('Pick at least one texture face.');
-  const num = id => Number(document.getElementById(id).value);
-
-  const fd = new FormData();
-  fd.append('photo', document.getElementById('photo').files[0]);
-  for (const f of faces) fd.append('faces', f);
-  fd.append('payload', JSON.stringify({
-    quad,
-    tile_mm: [num('tileW'), num('tileD')],
-    floor_mm: [num('floorW'), num('floorD')],
-    grout_mm: num('groutMm'),
-    layout: document.getElementById('layout').value,
-    auto: document.getElementById('auto').value,
-    exclude: strokes.filter(s => s.length > 1).map(s => strokeToPolygon(s)),
-  }));
-
-  const r = await fetch('/render', { method: 'POST', body: fd });
-  if (!r.ok) return alert('Render failed: ' + r.status + ' ' + await r.text());
-  const out = document.getElementById('result');
-  out.src = URL.createObjectURL(await r.blob());
-  out.hidden = false;
-};
-</script>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef">
+  <title>Showroom · Material studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></symbol>
+    <symbol id="i-corners" viewBox="0 0 24 24"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M8 8h8v8H8Z"/></symbol>
+    <symbol id="i-outline" viewBox="0 0 24 24"><path d="M4 4h8v8h8v8H4Z"/><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="20" cy="20" r="1.5"/></symbol>
+    <symbol id="i-protect" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 4 3 9l5 5M3 9h11a6 6 0 0 1 0 12"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Showroom home">showroom<span>.</span><small>Material studio</small></a>
+    <div class="header-actions"><span class="local-badge"><i></i>Local demo</span><button id="demo" class="button quiet"><svg><use href="#i-spark"/></svg>Try demo</button><label for="photo" class="button dark"><svg><use href="#i-upload"/></svg>Upload room</label><input id="photo" type="file" accept="image/*,.heic,.heif" class="file-input"></div>
+  </header>
+  <main class="workspace">
+    <div class="page-heading"><div><p class="eyebrow">A little change. A different feeling.</p><h1>Your room. A new perspective.</h1><p>Explore a new floor in your own space, before you make a decision.</p></div><ol class="steps" aria-label="Preview steps"><li id="step-photo"><span>1</span>Room</li><li id="step-floor"><span>2</span>Floor area</li><li id="step-material"><span>3</span>Material</li></ol></div>
+    <div class="studio-grid">
+      <section class="preview-column" aria-label="Room preview">
+        <section class="room-library" aria-labelledby="room-library-title">
+          <div class="room-library-header"><h2 id="room-library-title">Choose a room</h2><p>Start with a sample, or upload your own photo.</p></div>
+          <div id="rooms" class="room-grid" aria-label="Sample rooms"></div>
+        </section>
+        <div class="viewer-card">
+          <div class="viewer-header"><div class="room-title"><span id="room-name">Your room</span><span id="photo-kind" class="tag">Sample room</span></div><div class="view-switch" aria-label="Preview mode"><button id="edit-view" aria-pressed="true">Edit floor</button><button id="compare-view" aria-pressed="false" disabled>Before / after</button></div></div>
+          <div id="stage" class="viewer-stage">
+            <div id="empty-state" class="empty-state" hidden><svg><use href="#i-upload"/></svg><h2>Start with a room</h2><p>Upload a photo or explore the sample space.</p><button id="empty-demo" class="button quiet">Try the sample room</button></div>
+            <div id="image-frame" class="image-frame" hidden>
+              <canvas id="cv" role="img" aria-label="Original room photo"></canvas>
+              <div id="result-layer" class="result-layer" hidden><img id="result" alt="Room with the selected floor material"><div class="compare-label before-label">Before</div><div class="compare-label after-label">After</div><div class="compare-line"><span>‹ ›</span></div></div>
+            </div>
+            <canvas id="guides" class="floor-guides" tabindex="0" aria-label="Floor editor. Perspective uses four corners. Floor outline accepts a point at every bend; press Enter to finish. Drag points or use arrow keys to adjust." hidden></canvas>
+            <div id="render-overlay" class="render-overlay" hidden><span class="spinner"></span><strong>Creating your preview</strong><span>Keeping the room’s light and perspective.</span></div>
+          </div>
+          <div class="viewer-toolbar"><div class="tool-buttons" aria-label="Floor editing tools"><button id="detect-floor" class="tool" title="Suggest the floor area automatically; review the outline before rendering." disabled><svg><use href="#i-spark"/></svg>Detect floor</button><button id="corners-tool" class="tool" aria-pressed="true"><svg><use href="#i-corners"/></svg>Perspective</button><button id="outline-tool" class="tool" aria-pressed="false"><svg><use href="#i-outline"/></svg>Floor outline</button><button id="protect-tool" class="tool" aria-pressed="false"><svg><use href="#i-protect"/></svg>Protect objects</button><button id="finish-outline" class="tool" hidden disabled><svg><use href="#i-check"/></svg>Finish outline</button></div><div class="history-buttons"><button id="undo" class="icon-button" aria-label="Undo last area" title="Undo last area" disabled><svg><use href="#i-undo"/></svg></button><button id="reset" class="text-button">Reset floor</button></div></div>
+          <div id="compare-controls" class="compare-controls" hidden><label for="compare-slider">Before <span>Drag to compare</span> After</label><input id="compare-slider" type="range" min="0" max="100" value="50" aria-label="Before and after comparison"></div>
+        </div>
+        <div class="editor-hint"><span id="corner-count" class="corner-count">4/4</span><div><strong id="hint-title">Your floor is ready</strong><p id="hint-text">Choose a material and create a preview. Drag any corner to refine the floor.</p></div></div>
+        <div class="preview-footer"><a id="photo-credit" href="https://images.unsplash.com/photo-1600607687920-4e2a09cf159d" target="_blank" rel="noreferrer">Sample photo via Unsplash</a><a id="download" class="download-link" download="showroom-preview.png" hidden><svg><use href="#i-download"/></svg>Download preview</a></div>
+      </section>
+      <aside class="settings-panel" aria-label="Material and floor settings">
+        <div class="panel-title"><p class="eyebrow">Find your finish</p><h2>Materials</h2><span>Try a different texture. See how it feels.</span></div>
+        <div id="catalogue" class="material-grid" aria-label="CC0 material samples"></div>
+        <p id="catalogue-status" class="sample-note">Free CC0 texture samples. Tile sizes are preview presets, not product specifications.</p>
+        <div id="material-source" class="material-source" hidden><strong></strong><span></span><a target="_blank" rel="noreferrer">View texture source ↗</a></div>
+        <label for="faces" class="custom-upload"><svg><use href="#i-upload"/></svg><span>Your own texture<small id="custom-note">Add one or more tile images</small></span><span class="plus">+</span></label><input id="faces" type="file" accept="image/*,.heic,.heif" multiple class="file-input">
+        <fieldset class="dimensions"><legend>Floor dimensions <span>meters</span></legend><div class="dimension-fields"><label for="floorW">Width<input id="floorW" type="number" min="0.1" max="20" step="0.1" value="4.2" inputmode="decimal"></label><span>×</span><label for="floorD">Depth<input id="floorD" type="number" min="0.1" max="20" step="0.1" value="3.2" inputmode="decimal"></label></div><p class="field-help">Sets the tile scale in your selected floor area.</p></fieldset>
+        <details class="finish-settings"><summary>Tile &amp; finish settings</summary><div class="finish-body"><label class="field-label">Tile size <span>mm</span></label><div class="paired-inputs"><label class="sr-only" for="tileW">Tile width in millimeters</label><input id="tileW" type="number" min="50" max="2000" value="800"><span>×</span><label class="sr-only" for="tileD">Tile depth in millimeters</label><input id="tileD" type="number" min="50" max="2000" value="800"></div><div class="setting-row"><label for="layout">Pattern</label><select id="layout"><option value="grid">Straight lay</option><option value="brick">Half offset</option></select></div><div class="setting-row"><label for="groutMm">Grout <span>mm</span></label><input id="groutMm" type="number" min="0" max="20" step="0.5" value="2"></div><div class="setting-row colour-setting"><label for="groutColour">Grout colour</label><div><span id="colour-label">Warm grey</span><input id="groutColour" type="color" value="#aaa99e"></div></div><label class="auto-setting" for="auto"><input id="auto" type="checkbox"><span>Preserve contrasting objects<small>Optional colour-based mask; check the result.</small></span></label></div></details>
+        <div class="render-actions"><div id="status" class="status" role="status" aria-live="polite" data-state="ready"><span class="status-dot"></span><span id="status-text">Ready to preview</span></div><button id="go" class="render-button"><span id="render-label">Create preview</span><svg><use href="#i-arrow"/></svg></button><p class="render-note">Your photos stay on this local server.</p></div>
+      </aside>
+    </div>
+  </main>
+  <footer class="app-footer"><span>See the possibility. Make it yours.</span><span>Experimental floor preview · Manual area selection</span></footer>
+</body>
+</html>

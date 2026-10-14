@@ -54,9 +54,14 @@ def floor_mask_by_colour_deviation(base_bgr: np.ndarray, quad: Quad,
 
 def build_mask(base_bgr: np.ndarray, quad: Quad,
                exclude: list[list[tuple[float, float]]] | None = None,
-               auto: str = "none", threshold: float = 13.0) -> np.ndarray:
-    """Floor quad, minus hand-drawn polygons, minus whatever `auto` detects."""
+               auto: str = "none", threshold: float = 13.0,
+               floor_boundary: list[tuple[float, float]] | None = None) -> np.ndarray:
+    """Perspective plane clipped to the floor outline, then objects removed."""
     quad_mask = quad_mask_of(base_bgr.shape, quad)
+    if floor_boundary is not None:
+        boundary_mask = np.zeros(base_bgr.shape[:2], np.uint8)
+        cv2.fillPoly(boundary_mask, [np.int32(floor_boundary)], 255)
+        quad_mask = cv2.bitwise_and(quad_mask, boundary_mask)
     mask = quad_mask.copy()
     for poly in (exclude or []):
         cv2.fillPoly(mask, [np.int32(poly)], 0)

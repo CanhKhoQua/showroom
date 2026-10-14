@@ -53,6 +53,46 @@ def test_lighting_gain_is_darker_where_the_shadow_is():
     assert gain[770, 1010] < gain[770, 300]     # shadow vs window side
 
 
+def test_uniform_floor_light_ignores_bright_excluded_pixels():
+    base = np.full((240, 360, 3), 255, np.uint8)
+    mask = np.zeros(base.shape[:2], np.uint8)
+    mask[50:220, 30:330] = 255
+    mask[90:170, 150:210] = 0
+    base[mask > 0] = 120
+
+    gain = lighting_gain(base, mask)
+
+    assert np.allclose(gain[mask > 0], 1.0, atol=1e-4)
+
+
+def test_lighting_retains_a_narrow_shadow_without_old_floor_grain():
+    height, width = 320, 480
+    y, x = np.mgrid[:height, :width]
+    grain = 18 * np.cos(x * np.pi / 2) * np.cos(y * np.pi / 2)
+    shadow = 0.5 * np.exp(-((y - 160) / 6) ** 2)
+    gray = np.clip((150 + grain) * (1 - shadow), 0, 255).astype(np.uint8)
+    base = np.repeat(gray[..., None], 3, axis=2)
+    mask = np.full((height, width), 255, np.uint8)
+
+    gain = lighting_gain(base, mask)
+
+    assert gain[160, 240] < 0.85 * gain[100, 240]
+    assert gain[40:100, 80:400].std() < 0.01
+
+
+def test_render_preserves_every_unselected_pixel_at_mask_boundaries():
+    base = np.full((120, 160, 3), 120, np.uint8)
+    mask = np.zeros(base.shape[:2], np.uint8)
+    mask[30:110, 20:150] = 255
+    mask[60:80, 70:90] = 0
+    sheet = np.full((80, 130, 3), 210, np.uint8)
+    quad = [(20, 30), (150, 30), (150, 110), (20, 110)]
+
+    out = render(base, sheet, quad, mask=mask)
+
+    assert np.array_equal(out[mask == 0], base[mask == 0])
+
+
 def test_render_leaves_pixels_outside_the_mask_untouched():
     base = room_with_objects()
     sheet = build_tile_sheet([np.full((600, 600, 3), 235, np.uint8)],

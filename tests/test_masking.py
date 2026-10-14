@@ -19,6 +19,34 @@ def test_hand_drawn_exclusion_removes_exactly_that_polygon():
     assert tiled_pct(m, BARE_FLOOR) == 100.0     # untouched elsewhere
 
 
+def test_concave_floor_boundary_keeps_the_wall_inside_its_notch():
+    base = np.full((300, 400, 3), 120, np.uint8)
+    quad = [(20, 20), (380, 20), (380, 280), (20, 280)]
+    boundary = [(20, 20), (180, 20), (180, 140), (380, 140),
+                (380, 280), (20, 280)]
+
+    mask = build_mask(base, quad, floor_boundary=boundary)
+
+    assert mask[80, 300] == 0
+    assert mask[80, 100] == 255
+    assert mask[220, 300] == 255
+    assert mask[10, 100] == 0
+
+
+def test_floor_boundary_still_preserves_objects_and_clips_to_the_plane():
+    base = np.full((300, 400, 3), 120, np.uint8)
+    quad = [(20, 20), (380, 20), (380, 280), (20, 280)]
+    boundary = [(0, 0), (400, 0), (400, 300), (0, 300)]
+    object_outline = [(80, 170), (130, 170), (130, 230), (80, 230)]
+
+    mask = build_mask(base, quad, exclude=[object_outline],
+                      floor_boundary=boundary)
+
+    assert mask[200, 100] == 0
+    assert mask[200, 200] == 255
+    assert mask[10, 100] == 0
+
+
 def test_colour_deviation_catches_the_chromatic_cabinet():
     base = room_with_objects()
     m = build_mask(base, QUAD, auto="colour-deviation", threshold=13.0)
