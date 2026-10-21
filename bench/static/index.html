@@ -7,7 +7,9 @@
   <title>Showroom · Material studio</title>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/workspace.js" defer></script>
   <script src="/static/quote.js" defer></script>
+  <script src="/static/project.js" defer></script>
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -26,6 +28,12 @@
     <div class="header-actions"><span class="local-badge"><i></i>Local demo</span><button id="demo" class="button quiet"><svg><use href="#i-spark"/></svg>Try demo</button><label for="photo" class="button dark"><svg><use href="#i-upload"/></svg>Upload room</label><input id="photo" type="file" accept="image/*,.heic,.heif" class="file-input"></div>
   </header>
   <main class="workspace">
+    <section class="project-panel" aria-label="Server project">
+      <div class="project-actions"><label for="project-name">Project name<input id="project-name" type="text" maxlength="120" disabled value="My showroom project"></label><button id="project-save" class="button dark" type="button" disabled>Save project</button><button id="project-copy" class="button quiet" type="button" disabled>Save a copy</button><a class="button quiet" href="/">New project</a></div>
+      <p id="project-status" class="field-help" role="status" aria-live="polite">Save to keep rooms, photos and the estimate on the server.</p>
+      <div id="project-share" hidden><label for="project-link">Project link</label><div class="project-link-row"><input id="project-link" type="url" readonly><button id="project-copy-link" class="button quiet" type="button">Copy link</button></div><p class="field-help">Anyone with this link can view and edit the project. Save your changes before sharing it.</p></div>
+    </section>
+    <fieldset id="studio-editor" disabled inert aria-busy="true">
     <div class="page-heading"><div><p class="eyebrow">A little change. A different feeling.</p><h1>Your room. A new perspective.</h1><p>Explore a new floor in your own space, before you make a decision.</p></div><ol class="steps" aria-label="Preview steps"><li id="step-photo"><span>1</span>Room</li><li id="step-floor"><span>2</span>Floor area</li><li id="step-material"><span>3</span>Material</li></ol></div>
     <div class="studio-grid">
       <section class="preview-column" aria-label="Room preview">
@@ -80,8 +88,9 @@
         <p class="quote-total">Estimated total <strong id="quote-total"></strong></p>
         <p class="field-help">VND · Tile material only, including whole-box rounding. Delivery, installation and any additional taxes or fees are excluded. Confirm the final specification and price with the supplier.</p>
       </div>
-      <p class="field-help quote-session-note">This estimate stays in this tab until you reload or close it. Print a copy to keep it.</p>
+      <p class="field-help quote-session-note">Use Save project to keep these floors and their photos on the server. Select an added floor to reopen it, or print a copy of the estimate.</p>
     </section>
+    </fieldset>
   </main>
   <footer class="app-footer"><span>See the possibility. Make it yours.</span><span>Experimental floor preview · Manual area selection</span></footer>
 </body>

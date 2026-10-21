@@ -2,10 +2,18 @@ services:
   bench:
     build: .
     ports:
-      - "127.0.0.1:8100:8100"
+      - "${SHOWROOM_BIND_ADDRESS:-127.0.0.1}:8100:8100"
+    environment:
+      SHOWROOM_DATA_DIR: /data
+      SHOWROOM_PUBLIC_ORIGIN: ${SHOWROOM_PUBLIC_ORIGIN:-}
+    volumes:
+      - showroom-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 10s
+
+volumes:
+  showroom-data:

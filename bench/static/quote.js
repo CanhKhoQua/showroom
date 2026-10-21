@@ -26,8 +26,14 @@
   function renderRooms() {
     $('quote-rooms').replaceChildren();
     rooms.forEach((room, index) => {
-      const item = document.createElement('li'), label = document.createElement('span');
+      const item = document.createElement('li'), label = document.createElement('button');
+      label.type = 'button'; label.className = 'room-open';
       label.textContent = `${room.name} · ${room.size_m.join(' × ')} m · ${room.sku_name}`;
+      label.setAttribute('aria-label', `Open ${room.name}`);
+      label.onclick = async () => {
+        try { await window.showroomWorkspace.restore(room.workspace); }
+        catch (error) { message(error.message, true); }
+      };
       const remove = document.createElement('button');
       remove.type = 'button'; remove.className = 'text-button'; remove.textContent = 'Remove';
       remove.setAttribute('aria-label', `Remove ${room.name}`);
@@ -35,6 +41,7 @@
         rooms.splice(index, 1);
         if (!rooms.some(r => r.sku_name === room.sku_name)) skus.delete(room.sku_name);
         renderRooms(); calculate();
+        window.dispatchEvent(new Event('projectchange'));
       };
       item.append(label, remove); $('quote-rooms').append(item);
     });
@@ -49,7 +56,7 @@
     try {
       const response = await fetch('/quote', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rooms, skus: Object.fromEntries(skus), dimensions_confirmed: true }),
+        body: JSON.stringify({ rooms: rooms.map(({ workspace, ...room }) => room), skus: Object.fromEntries(skus), dimensions_confirmed: true }),
       });
       if (token !== version) return;
       if (!response.ok) throw new Error('Check the room dimensions, packaging and prices, then try again.');
@@ -94,11 +101,15 @@
       message(`Tile code ${code} already uses different dimensions, packaging, price or waste. Use the same values, or a different code for a different specification.`, true);
       return;
     }
+    let workspace;
+    try { workspace = window.showroomWorkspace.capture(); }
+    catch (error) { message(error.message, true); return; }
     skus.set(code, sku);
-    rooms.push({ name, size_m: [width, depth], sku_name: code });
+    rooms.push({ name, size_m: [width, depth], sku_name: code, workspace });
     $('quote-measured').checked = false;
     $('quote-room-name').value = '';
     renderRooms(); calculate();
+    window.dispatchEvent(new Event('projectchange'));
   };
 
   $('quote-sku-name').addEventListener('change', () => {
@@ -111,5 +122,14 @@
   ['floorW', 'floorD', 'tileW', 'tileD'].forEach(id => $(id).addEventListener('input', sourceChanged));
   window.addEventListener('floorchange', sourceChanged);
   $('quote-print').onclick = () => window.print();
+  window.showroomQuote = {
+    capture: () => structuredClone({ rooms, skus: Object.fromEntries(skus) }),
+    serialize: async snapshot => ({ ...snapshot, rooms: await Promise.all(snapshot.rooms.map(async room => ({ ...room, workspace: await window.showroomWorkspace.serialize(room.workspace) }))) }),
+    restore: snapshot => {
+      rooms.splice(0, rooms.length, ...snapshot.rooms);
+      skus.clear(); Object.entries(snapshot.skus).forEach(([code, sku]) => skus.set(code, sku));
+      renderRooms(); return calculate();
+    },
+  };
   sourceChanged();
 })();

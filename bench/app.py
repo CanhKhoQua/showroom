@@ -19,6 +19,7 @@ from pillow_heif import register_heif_opener
 from starlette.concurrency import run_in_threadpool
 
 from bench.quotes import router as quote_router
+from bench.projects import router as project_router
 from renderer.compose import render
 from renderer.floor_detection import detect_floor
 from renderer.floor_plane import estimate_floor_plane
@@ -27,6 +28,7 @@ from renderer.tiles import build_tile_sheet
 
 app = FastAPI(title="Render bench")
 app.include_router(quote_router)
+app.include_router(project_router)
 STATIC = Path(__file__).parent / "static"
 VALID_AUTO = {"none", "colour-deviation"}
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

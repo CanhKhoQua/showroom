@@ -74,7 +74,8 @@ images can also be uploaded directly.
 Click **Create preview**, use the before/after slider to compare the result with the
 original photo, then download the rendered image.
 
-The bench is bound to localhost. Rebuild the image after changing source code.
+The bench is bound to localhost by default. Rebuild the image after changing
+source code. See **Shared server projects** below for access from the local network.
 
 Demo room photo: [Unsplash](https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1400&q=85),
 used under the [Unsplash License](https://unsplash.com/license).
@@ -135,15 +136,17 @@ pattern. For irregular floors, add measured rectangular sections separately.
 Room presets and automatic detection provide estimated dimensions, which must
 be replaced or verified against measurements before quoting. Changing the room,
 material or dimensions clears the measurement confirmation. Floors already
-added keep a snapshot of their dimensions. Remove and re-add a floor to revise
-it. Rooms with the same product code must use the same tile size, packaging,
+added keep a snapshot of their photo, outline, protected objects, material and
+dimensions. Select an added floor to reopen it. Remove and re-add a floor to
+revise its quote quantities. Rooms with the same product code must use the same tile size, packaging,
 price and waste; enter a distinct code for a different specification.
 
 The estimate lists required tiles, whole boxes, purchased area and the total
 material cost. Prices apply to whole boxes. Delivery, installation and any
 additional taxes or fees are excluded. The sample materials have no product
-prices or packaging defaults; enter actual supplier data. Nothing is saved
-after a reload or closing the tab. Use **Print estimate** to print or save a PDF.
+prices or packaging defaults; enter actual supplier data. Use **Save project**
+to keep the rooms and estimate on the server, or **Print estimate** to print or
+save a PDF.
 
 `POST /quote` accepts JSON with `rooms` (`name`, `size_m`, `sku_name`), `skus`
 (keyed by product code, with `tile_mm`, `tiles_per_box`, `price_per_box`,
@@ -153,11 +156,65 @@ non-finite or non-positive sizes, invalid box counts and negative prices or
 waste are rejected with HTTP 422. Tile quantities use decimal arithmetic so an
 exact box boundary does not acquire an extra tile through floating-point error.
 
+## Shared server projects
+
+Enter a project name and choose **Save project**. The server stores the current
+room, uploaded photo and textures, editable floor geometry, and all added floors
+with their quote data. The project link restores this information after a reload
+or from a separate browser or device. A saved preview can be recreated with
+**Create preview**. Edits require another save; the page shows unsaved changes
+and asks before leaving them. **New project** opens a fresh workspace, and
+**Save a copy** keeps a separate version under a new link.
+
+Projects are stored in SQLite inside the `showroom-data` Docker volume. Rebuilding
+or recreating the container and `docker compose down` preserve that volume.
+For a direct Python launch, `SHOWROOM_DATA_DIR` selects the data directory and
+defaults to `data/`.
+
+To use phones and tablets on the same Wi-Fi or LAN, put these settings in a local
+`.env` file, replacing the example address with the server computer's LAN address:
+
+```dotenv
+SHOWROOM_BIND_ADDRESS=0.0.0.0
+SHOWROOM_PUBLIC_ORIGIN=http://192.168.1.10:8100
+```
+
+Then run `docker compose up -d --wait` and open that LAN address on each device.
+The computer must remain running and reachable on the same network. The public
+origin makes **Copy link** use the LAN address even when the server computer
+opens the app through localhost. Update it if the computer's address changes.
+When clipboard access is unavailable over LAN HTTP, the button selects the link
+for manual copying.
+
+Anyone with a project link can view and edit that project. Project links are
+random and projects are not publicly listed. If two devices edit the same saved
+revision, the first save succeeds and the second is rejected without overwriting
+it. The second device can reload the saved version or choose **Save a copy** to
+keep its edits. This setup serves the local network; Internet hosting and user
+accounts are separate work.
+
+`POST /projects` creates a named snapshot and returns its link and revision.
+`GET /projects/{id}` opens it, and `PUT /projects/{id}` requires the last loaded
+`revision`. A stale revision returns HTTP 409. Project responses use `no-store`
+cache control, and the server validates room dimensions, product references,
+finite floor coordinates and embedded raster image data before saving.
+
 ## Test
 
 ```bash
 docker compose run --rm --no-deps bench python -m pytest -q
 ```
+
+The browser checks require a Playwright package with Chromium and WebKit
+installed on the host. Run `node tests/browser_projects.cjs`, followed by
+`node tests/browser_project_loading.cjs`, against the running local server.
+If Playwright is installed elsewhere, set `PLAYWRIGHT_MODULE` to its package
+directory. `SHOWROOM_TEST_URL` can select another local server address.
+These checks create sample server projects and save screenshots and their
+test fixture in the ignored `artifacts/server-project-check/` directory.
+They cover save/reload, separate browser sessions, LAN share links, reopening
+rooms, conflicting saves, save-copy recovery, WebKit mobile rendering and
+blocking edits while project data or the quote is still loading.
 
 ## Logs and shutdown
 

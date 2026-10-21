@@ -5,6 +5,7 @@ const canvas = $('cv'), photoContext = canvas.getContext('2d');
 const guides = $('guides'), context = guides.getContext('2d');
 let drawnPhoto = null;
 const roomPresets = [];
+const materialCatalogue = [];
 const state = { image: null, photo: null, photoUrl: null, roomId: null, quad: [], autoPlane: false, boundary: [], boundaryClosed: false, exclusions: [], aiExclusions: [], tool: 'corners', selectedCorner: -1, selectedBoundary: -1, drag: null, painting: null, material: null, customFaces: [], resultUrl: null, compare: false, request: null, version: 0, photoLoad: 0, loadingPhoto: false, textureLoad: 0, loadingTextures: false, detectingFloor: false, busy: false };
 
 function status(message, kind = 'ready') {
@@ -23,7 +24,8 @@ function setBusy(busy) {
   $('detect-floor').disabled = !state.photo || busy || state.loadingPhoto || state.loadingTextures;
 }
 
-function invalidate() {
+function invalidate(changed = true) {
+  if (changed) window.dispatchEvent(new Event('projectchange'));
   state.version += 1;
   if (state.request) state.request.abort();
   state.request = null;
@@ -460,9 +462,9 @@ async function loadMaterialCatalogue() {
   try {
     const response = await fetch('/static/materials/catalogue.json');
     if (!response.ok) throw new Error('Catalogue unavailable');
-    const catalogue = await response.json();
-    catalogue.forEach(material => addMaterialCard(material, $('catalogue')));
-    if (state.textureLoad === 0) selectMaterial(catalogue.find(material => material.id === 'concrete'), Boolean(state.resultUrl));
+    materialCatalogue.push(...await response.json());
+    materialCatalogue.forEach(material => addMaterialCard(material, $('catalogue')));
+    if (state.textureLoad === 0) selectMaterial(materialCatalogue.find(material => material.id === 'concrete'), Boolean(state.resultUrl));
   } catch {
     $('catalogue-status').textContent = 'The sample textures could not be loaded. Reload the page or upload your own texture.';
   }
@@ -537,7 +539,7 @@ async function createPreview() {
     }))) throw new Error('The floor outline extends beyond the perspective plane. Move the Perspective corners outside the outline, then try again.');
     if (!state.material && !state.customFaces.length) throw new Error('Choose a material or upload your own texture.');
     const values = validateSettings();
-    invalidate();
+    invalidate(false);
     version = state.version;
     controller = new AbortController();
     state.request = controller;
@@ -575,5 +577,4 @@ $('go').onclick = createPreview;
 ['floorW', 'floorD', 'tileW', 'tileD', 'groutMm', 'groutColour', 'layout', 'auto'].forEach(id => $(id).addEventListener('input', () => { clearErrors(); invalidate(); if (id === 'groutColour') $('colour-label').textContent = $('groutColour').value.toUpperCase(); }));
 new ResizeObserver(fitImage).observe($('stage'));
 updateMaterials();
-loadMaterialCatalogue();
-loadRoomLibrary();
+const studioReady = Promise.all([loadMaterialCatalogue(), loadRoomLibrary()]);
