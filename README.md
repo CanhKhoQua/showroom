@@ -39,13 +39,19 @@ to draw a closed freehand area over an
 object that should retain its original appearance. You can also upload custom
 texture faces and set the tile dimensions in millimetres and floor dimensions
 in metres.
+For rectangular tiles, **Half offset** staggers joints along the longer side,
+including upright wood planks, while retaining the source grain direction.
 
 For an automatic starting point, upload the room and click **Detect floor**.
 SegFormer B4 runs locally on two CPU threads and returns an editable outline of
 the dominant floor region, with detected object holes protected. Review the
 outline, especially rugs and object edges, before rendering. The outline edge
-is snapped to edges in the photo, because the model itself only predicts at a
-quarter of its input resolution.
+is snapped to colour edges in the photo, because the model itself only predicts
+at a quarter of its input resolution. Confident non-floor predictions remain
+protected during refinement.
+
+Preview texture resolution follows the photo geometry and available source
+detail, with a roughly 16-megapixel tile sheet limit, to retain grain detail.
 
 When no Perspective corners are set, detection also estimates the floor plane:
 vertical edges such as wall corners and door frames give the camera tilt, and

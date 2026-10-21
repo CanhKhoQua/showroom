@@ -24,7 +24,7 @@ from renderer.compose import render
 from renderer.floor_detection import detect_floor
 from renderer.floor_plane import estimate_floor_plane
 from renderer.masking import build_mask
-from renderer.tiles import build_tile_sheet
+from renderer.tiles import build_tile_sheet, tile_sheet_scale
 
 app = FastAPI(title="Render bench")
 app.include_router(quote_router)
@@ -92,11 +92,12 @@ async def do_render(payload: str = Form(...),
     if not face_images:
         raise HTTPException(422, "at least one texture face is required")
 
+    tile_mm = tuple(body.get("tile_mm", (600, 600)))
+    floor_mm = tuple(body.get("floor_mm", (4000, 3000)))
+    scale = (float(body["px_per_mm"]) if "px_per_mm" in body else
+             tile_sheet_scale(face_images, tile_mm, floor_mm, quad))
     sheet = build_tile_sheet(
-        face_images,
-        tuple(body.get("tile_mm", (600, 600))),
-        tuple(body.get("floor_mm", (4000, 3000))),
-        float(body.get("px_per_mm", 0.35)),
+        face_images, tile_mm, floor_mm, scale,
         layout=body.get("layout", "grid"),
         grout_mm=float(body.get("grout_mm", 2.0)),
         grout_bgr=tuple(body.get("grout_bgr", (205, 205, 205))))

@@ -105,3 +105,33 @@ def test_pinholes_in_the_floor_are_not_reported_as_objects():
     result = outlines_from_mask(mask, (3024, 4032))
 
     assert len(result["exclude"]) == 1
+
+
+def test_floor_edge_uses_colour_when_carpet_and_mat_have_equal_brightness():
+    from renderer.floor_detection import floor_mask_from_logits
+
+    guide = np.full((256, 256, 3), (116, 116, 116), np.uint8)
+    guide[:, 100:] = (60, 100, 170)
+    # The grayscale filter cannot distinguish these two surfaces.
+    assert cv2.cvtColor(guide, cv2.COLOR_BGR2GRAY)[128, 50] == cv2.cvtColor(
+        guide, cv2.COLOR_BGR2GRAY)[128, 200]
+    logits = np.zeros((4, 32, 32), np.float32)
+    logits[0] = 2
+    logits[3, :, 14:] = 6
+
+    mask = floor_mask_from_logits(logits, (256, 256), guide)
+    assert abs(int(np.argmax(mask[128] > 0)) - 100) <= 2
+
+
+def test_edge_refinement_preserves_a_confidently_detected_same_colour_object():
+    from renderer.floor_detection import floor_mask_from_logits
+
+    guide = np.full((256, 256, 3), 150, np.uint8)
+    logits = np.zeros((4, 32, 32), np.float32)
+    logits[0] = 2
+    logits[3, :, 16:] = 6
+    logits[3, 20:24, 20:24] = -8
+
+    mask = floor_mask_from_logits(logits, (256, 256), guide)
+    assert mask[176, 176] == 0
+    assert mask[80, 210] == 255

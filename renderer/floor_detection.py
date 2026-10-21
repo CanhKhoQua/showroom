@@ -27,11 +27,21 @@ def model_input_size(width: int, height: int, long_side: int = 640) -> tuple[int
 
 def guided_filter(guide: np.ndarray, src: np.ndarray, radius: int,
                   eps: float) -> np.ndarray:
-    """He et al. guided filter: src follows the edges present in guide."""
+    """He et al. guided filter with a scalar or three-channel colour guide."""
     def box(values):
         return cv2.boxFilter(values, -1, (2 * radius + 1, 2 * radius + 1))
 
     mean_i, mean_p = box(guide), box(src)
+    if guide.ndim == 3:
+        covariance = np.stack([
+            box(guide[..., i] * guide[..., j]) - mean_i[..., i] * mean_i[..., j]
+            for i in range(3) for j in range(3)
+        ], axis=-1).reshape(*src.shape, 3, 3)
+        cross = box(guide * src[..., None]) - mean_i * mean_p[..., None]
+        a = np.linalg.solve(covariance + eps * np.eye(3, dtype=np.float32),
+                            cross[..., None])[..., 0]
+        b = mean_p - (a * mean_i).sum(axis=-1)
+        return (box(a) * guide).sum(axis=-1) + box(b)
     a = (box(guide * src) - mean_i * mean_p) / (box(guide * guide) - mean_i ** 2 + eps)
     b = mean_p - a * mean_i
     return box(a) * guide + box(b)
@@ -48,11 +58,13 @@ def floor_mask_from_logits(logits: np.ndarray, size: tuple[int, int],
     others = np.delete(logits, 3, axis=0).max(axis=0)
     margin = cv2.resize(logits[3] - others, size, interpolation=cv2.INTER_LINEAR)
     floor = 1.0 / (1.0 + np.exp(-np.clip(margin, -30, 30)))
+    # Refinement must retain regions the model confidently identified as objects.
+    possible_floor = floor >= 0.1
     if guide_bgr is not None:
-        gray = cv2.cvtColor(guide_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        colour = guide_bgr.astype(np.float32) / 255.0
         cell = max(size[0] / logits.shape[2], size[1] / logits.shape[1])
-        floor = guided_filter(gray, floor.astype(np.float32), max(2, round(cell * 3)), 1e-3)
-    return (floor > 0.5).astype(np.uint8) * 255
+        floor = guided_filter(colour, floor.astype(np.float32), max(2, round(cell * 3)), 1e-3)
+    return ((floor > 0.5) & possible_floor).astype(np.uint8) * 255
 
 
 def outlines_from_mask(mask: np.ndarray, image_size: tuple[int, int]) -> dict:

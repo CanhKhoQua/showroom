@@ -3,6 +3,22 @@ import cv2
 import numpy as np
 
 
+def tile_sheet_scale(faces: list[np.ndarray], tile_mm: tuple[float, float],
+                     floor_mm: tuple[float, float], quad: list) -> float:
+    """Match photo detail using source resolution and a roughly 16 MP cap."""
+    points = np.asarray(quad, np.float64)
+    horizontal = max(np.linalg.norm(points[1] - points[0]),
+                     np.linalg.norm(points[2] - points[3])) / floor_mm[0]
+    vertical = max(np.linalg.norm(points[2] - points[1]),
+                   np.linalg.norm(points[3] - points[0])) / floor_mm[1]
+    source = min(min(image.shape[1] / tile_mm[0], image.shape[0] / tile_mm[1])
+                 for image in faces)
+    # The builder needs at least two pixels per tile to preserve physical scale.
+    minimum = 2 / min(tile_mm)
+    budget = (16_000_000 / (floor_mm[0] * floor_mm[1])) ** 0.5
+    return float(min(max(minimum, min(max(horizontal, vertical), source)), budget))
+
+
 def paste(dst: np.ndarray, src: np.ndarray, x: int, y: int) -> None:
     """Paste src into dst at (x, y), clipping whatever falls outside."""
     h_dst, w_dst = dst.shape[:2]
@@ -39,6 +55,14 @@ def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
     resized = [cv2.resize(f, (tile_w - gap, tile_h - gap),
                           interpolation=cv2.INTER_AREA) for f in faces]
 
+    # Stagger along the long axis of upright planks without rotating their grain.
+    vertical_brick = layout == "brick" and tile_h > tile_w
+    if vertical_brick:
+        sheet = sheet.transpose(1, 0, 2)
+        resized = [image.transpose(1, 0, 2) for image in resized]
+        width, height = height, width
+        tile_w, tile_h = tile_h, tile_w
+
     rng = np.random.default_rng(seed)
     row = y = 0
     while y < height:
@@ -49,4 +73,4 @@ def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
             x += tile_w
         y += tile_h
         row += 1
-    return sheet
+    return sheet.transpose(1, 0, 2) if vertical_brick else sheet
