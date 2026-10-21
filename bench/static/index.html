@@ -7,6 +7,7 @@
   <title>Showroom · Material studio</title>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/quote.js" defer></script>
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -55,11 +56,32 @@
         <p id="catalogue-status" class="sample-note">Free CC0 texture samples. Tile sizes are preview presets, not product specifications.</p>
         <div id="material-source" class="material-source" hidden><strong></strong><span></span><a target="_blank" rel="noreferrer">View texture source ↗</a></div>
         <label for="faces" class="custom-upload"><svg><use href="#i-upload"/></svg><span>Your own texture<small id="custom-note">Add one or more tile images</small></span><span class="plus">+</span></label><input id="faces" type="file" accept="image/*,.heic,.heif" multiple class="file-input">
-        <fieldset class="dimensions"><legend>Floor dimensions <span>meters</span></legend><div class="dimension-fields"><label for="floorW">Width<input id="floorW" type="number" min="0.1" max="20" step="0.1" value="4.2" inputmode="decimal"></label><span>×</span><label for="floorD">Depth<input id="floorD" type="number" min="0.1" max="20" step="0.1" value="3.2" inputmode="decimal"></label></div><p class="field-help">Sets the tile scale in your selected floor area.</p></fieldset>
+        <fieldset class="dimensions"><legend>Floor dimensions <span>meters</span></legend><div class="dimension-fields"><label for="floorW">Width<input id="floorW" type="number" min="0.1" max="20" step="0.01" value="4.2" inputmode="decimal"></label><span>×</span><label for="floorD">Depth<input id="floorD" type="number" min="0.1" max="20" step="0.01" value="3.2" inputmode="decimal"></label></div><p class="field-help">Sets the tile scale in your selected floor area.</p></fieldset>
         <details class="finish-settings"><summary>Tile &amp; finish settings</summary><div class="finish-body"><label class="field-label">Tile size <span>mm</span></label><div class="paired-inputs"><label class="sr-only" for="tileW">Tile width in millimeters</label><input id="tileW" type="number" min="50" max="2000" value="800"><span>×</span><label class="sr-only" for="tileD">Tile depth in millimeters</label><input id="tileD" type="number" min="50" max="2000" value="800"></div><div class="setting-row"><label for="layout">Pattern</label><select id="layout"><option value="grid">Straight lay</option><option value="brick">Half offset</option></select></div><div class="setting-row"><label for="groutMm">Grout <span>mm</span></label><input id="groutMm" type="number" min="0" max="20" step="0.5" value="2"></div><div class="setting-row colour-setting"><label for="groutColour">Grout colour</label><div><span id="colour-label">Warm grey</span><input id="groutColour" type="color" value="#aaa99e"></div></div><label class="auto-setting" for="auto"><input id="auto" type="checkbox"><span>Preserve contrasting objects<small>Optional colour-based mask; check the result.</small></span></label></div></details>
         <div class="render-actions"><div id="status" class="status" role="status" aria-live="polite" data-state="ready"><span class="status-dot"></span><span id="status-text">Ready to preview</span></div><button id="go" class="render-button"><span id="render-label">Create preview</span><svg><use href="#i-arrow"/></svg></button><p class="render-note">Your photos stay on this local server.</p></div>
       </aside>
     </div>
+    <section class="quote-panel" aria-labelledby="quote-title">
+      <div class="quote-heading"><div><p class="eyebrow">Plan the whole home</p><h2 id="quote-title">Floor estimate</h2><p>Add each measured floor. Shared tile codes are combined before rounding to whole boxes.</p></div><button id="quote-print" class="button quiet" type="button" hidden>Print estimate</button></div>
+      <p id="quote-source" class="field-help"></p>
+      <form id="quote-form" class="quote-form">
+        <label for="quote-room-name">Room name<input id="quote-room-name" type="text" required maxlength="120" placeholder="Bedroom 1"></label>
+        <label for="quote-sku-name">Tile code<input id="quote-sku-name" type="text" required maxlength="120" placeholder="Your product code"></label>
+        <label for="quote-tiles">Tiles / box<input id="quote-tiles" type="number" min="1" step="1" required placeholder="4"></label>
+        <label for="quote-price">Price / box <span>VND</span><input id="quote-price" type="number" min="0" step="1" required placeholder="240000"></label>
+        <label for="quote-waste">Waste <span>%</span><input id="quote-waste" type="number" min="0" max="100" step="0.1" required value="8"></label>
+        <label class="quote-confirm" for="quote-measured"><input id="quote-measured" type="checkbox" required><span>I have entered measured floor and tile dimensions above. Sample rooms and automatic detection use estimates.</span></label>
+        <button class="button dark" type="submit">Add floor to estimate</button>
+      </form>
+      <p id="quote-status" class="quote-status" role="status" aria-live="polite">Enter your actual packaging and price. Sample textures have no product price.</p>
+      <ul id="quote-rooms" class="quote-rooms" aria-label="Floors in this estimate"></ul>
+      <div id="quote-results" hidden>
+        <div class="quote-table-scroll"><table id="quote-lines"><caption>Purchase quantities by tile code</caption><thead><tr><th scope="col">Tile code / rooms</th><th scope="col">Floor m²</th><th scope="col">Tiles</th><th scope="col">Boxes</th><th scope="col">Buy m²</th><th scope="col">Price / box</th><th scope="col">Amount</th></tr></thead><tbody></tbody></table></div>
+        <p class="quote-total">Estimated total <strong id="quote-total"></strong></p>
+        <p class="field-help">VND · Tile material only, including whole-box rounding. Delivery, installation and any additional taxes or fees are excluded. Confirm the final specification and price with the supplier.</p>
+      </div>
+      <p class="field-help quote-session-note">This estimate stays in this tab until you reload or close it. Print a copy to keep it.</p>
+    </section>
   </main>
   <footer class="app-footer"><span>See the possibility. Make it yours.</span><span>Experimental floor preview · Manual area selection</span></footer>
 </body>

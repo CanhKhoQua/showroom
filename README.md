@@ -122,6 +122,37 @@ each crop represents approximately 190 × 1200 mm at its native grain scale.
 The concrete and dark stone publishers do not specify physical dimensions.
 Catalogue tile dimensions are rendering presets and do not certify a product.
 
+## Multi-room floor estimates
+
+The **Floor estimate** panel combines measured floors by product code before
+rounding to whole boxes. Set the floor dimensions in metres and actual tile
+dimensions in millimetres in the material panel, then enter a room name, product
+code, tiles per box, price per box in VND and waste percentage. Confirm that the
+dimensions are measured, then choose **Add floor to estimate** for each room.
+The 8% waste starting value is editable; confirm it for the product and laying
+pattern. For irregular floors, add measured rectangular sections separately.
+
+Room presets and automatic detection provide estimated dimensions, which must
+be replaced or verified against measurements before quoting. Changing the room,
+material or dimensions clears the measurement confirmation. Floors already
+added keep a snapshot of their dimensions. Remove and re-add a floor to revise
+it. Rooms with the same product code must use the same tile size, packaging,
+price and waste; enter a distinct code for a different specification.
+
+The estimate lists required tiles, whole boxes, purchased area and the total
+material cost. Prices apply to whole boxes. Delivery, installation and any
+additional taxes or fees are excluded. The sample materials have no product
+prices or packaging defaults; enter actual supplier data. Nothing is saved
+after a reload or closing the tab. Use **Print estimate** to print or save a PDF.
+
+`POST /quote` accepts JSON with `rooms` (`name`, `size_m`, `sku_name`), `skus`
+(keyed by product code, with `tile_mm`, `tiles_per_box`, `price_per_box`,
+`waste_pct`) and `dimensions_confirmed: true`. It returns grouped `lines`,
+`total` and `currency: "VND"`. Missing product codes, unconfirmed dimensions,
+non-finite or non-positive sizes, invalid box counts and negative prices or
+waste are rejected with HTTP 422. Tile quantities use decimal arithmetic so an
+exact box boundary does not acquire an extra tile through floating-point error.
+
 ## Test
 
 ```bash

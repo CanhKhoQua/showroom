@@ -317,6 +317,7 @@ async function detectFloor() {
       Object.assign(state, { quad: result.plane.quad, autoPlane: false, selectedCorner: -1 });
       $('floorW').value = (result.plane.floor_mm[0] / 1000).toFixed(2);
       $('floorD').value = (result.plane.floor_mm[1] / 1000).toFixed(2);
+      window.dispatchEvent(new Event('floorchange'));
       estimated = true;
     }
     setTool('outline');
@@ -365,6 +366,7 @@ async function loadPhoto(blob, name, preset, token) {
     else $('photo-credit').removeAttribute('href');
   }
   updateRooms();
+  window.dispatchEvent(new Event('floorchange'));
   setTool(state.boundaryClosed ? 'outline' : 'corners');
   fitImage();
   status(preset ? 'Sample room ready. Create your first preview.' : 'Photo loaded. Select the four floor corners.');
@@ -442,6 +444,7 @@ function selectMaterial(material, renderNow = true) {
   [$('tileW').value, $('tileD').value] = material.size;
   $('layout').value = material.layout;
   $('groutMm').value = material.gap; $('groutColour').value = material.grout; $('colour-label').textContent = material.grout.toUpperCase();
+  window.dispatchEvent(new Event('floorchange'));
   updateMaterials();
   if (renderNow && state.image && state.quad.length === 4) createPreview();
 }
@@ -482,6 +485,7 @@ $('faces').onchange = async event => {
     if (token !== state.textureLoad) return;
     invalidate();
     state.customFaces = faces; state.material = null;
+    window.dispatchEvent(new Event('floorchange'));
     $('custom-note').textContent = `${faces.length} texture ${faces.length === 1 ? 'image' : 'images'} selected`;
     updateMaterials();
     status('Custom texture ready. Set the tile size, then create a preview.');

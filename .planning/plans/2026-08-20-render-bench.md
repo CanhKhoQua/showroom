@@ -1270,7 +1270,7 @@ git commit -m "feat(bench): four-point picker and render endpoint"
   - `quote_by_sku(rooms: list[Room], skus: dict[str, Sku], waste_pct: float = 8.0) -> dict[str, dict]`
   - `quote_per_room(rooms, skus, waste_pct=8.0) -> dict[str, dict]` — kept only to demonstrate the difference
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_quote.py
@@ -1334,12 +1334,12 @@ def test_unknown_sku_name_is_an_error():
         quote_by_sku([Room("x", "bedroom", (3.0, 3.0), "nope")], SKUS)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_quote.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'renderer.quote'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # renderer/quote.py
@@ -1411,17 +1411,17 @@ def quote_per_room(rooms: list[Room], skus: dict[str, Sku],
     return out
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_quote.py -v`
 Expected: 7 passed
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
 
 Run: `.venv/bin/pytest -q`
 Expected: 45 passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add renderer/quote.py tests/test_quote.py
