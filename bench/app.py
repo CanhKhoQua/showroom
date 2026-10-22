@@ -23,7 +23,7 @@ from bench.projects import router as project_router
 from renderer.compose import render
 from renderer.floor_detection import detect_floor
 from renderer.floor_plane import estimate_floor_plane
-from renderer.surface_selection import select_surface
+from renderer.surface_selection import refine_floor_detection, select_surface
 from renderer.masking import build_mask
 from renderer.tiles import build_tile_sheet, tile_sheet_scale
 
@@ -83,6 +83,10 @@ def _render_surface(base: np.ndarray, face_images: list[np.ndarray], body: dict)
     if not face_images:
         raise HTTPException(422, "at least one texture face is required")
 
+    surface_finish = body.get('surface_finish', 'matte')
+    if surface_finish not in ('matte', 'satin', 'polished'):
+        raise HTTPException(422, 'surface finish must be matte, satin, or polished')
+
     tile_mm = tuple(body.get("tile_mm", (600, 600)))
     floor_mm = tuple(body.get("floor_mm", (4000, 3000)))
     rotation = body.get('tile_rotation', 0)
@@ -93,11 +97,15 @@ def _render_surface(base: np.ndarray, face_images: list[np.ndarray], body: dict)
         tile_mm = tile_mm[::-1]
     scale = (float(body["px_per_mm"]) if "px_per_mm" in body else
              tile_sheet_scale(face_images, tile_mm, floor_mm, quad))
+    reflectance = None
+    if surface_finish != 'matte':
+        reflectance = np.empty((max(2, round(floor_mm[1] * scale)),
+                                max(2, round(floor_mm[0] * scale))), np.uint8)
     sheet = build_tile_sheet(
         face_images, tile_mm, floor_mm, scale,
         layout=body.get("layout", "grid"),
         grout_mm=float(body.get("grout_mm", 2.0)),
-        grout_bgr=tuple(body.get("grout_bgr", (205, 205, 205))))
+        grout_bgr=tuple(body.get("grout_bgr", (205, 205, 205))), reflectance=reflectance)
 
     mask = build_mask(base, [tuple(p) for p in quad],
                       exclude=[[tuple(p) for p in poly]
@@ -106,7 +114,8 @@ def _render_surface(base: np.ndarray, face_images: list[np.ndarray], body: dict)
                       threshold=float(body.get("threshold", 13.0)),
                       floor_boundary=floor_boundary)
     out = render(base, sheet, [tuple(p) for p in quad], mask=mask,
-                 strength=float(body.get("strength", 1.0)))
+                 strength=float(body.get("strength", 1.0)), surface_finish=surface_finish,
+                 reflectance=reflectance)
     return out, mask
 
 
@@ -170,6 +179,7 @@ async def find_floor(photo: UploadFile = File(...)):
     base = _decode(await photo.read())
     try:
         result = await run_in_threadpool(detect_floor, base)
+        result = await run_in_threadpool(refine_floor_detection, base, result)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     plane = await run_in_threadpool(

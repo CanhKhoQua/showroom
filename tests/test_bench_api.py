@@ -82,6 +82,54 @@ def test_render_rejects_a_layer_texture_count_mismatch():
     assert 'texture' in response.json()['detail'].lower()
 
 
+def test_unknown_surface_finish_is_rejected():
+    response = client.post('/render', data={'payload': payload(surface_finish='mirror')},
+        files={'photo': ('room.png', photo_bytes(), 'image/png'),
+               'faces': ('face.png', face_bytes(), 'image/png')})
+
+    assert response.status_code == 422
+    assert 'finish' in response.json()['detail'].lower()
+
+
+def test_render_api_applies_each_layers_own_surface_finish():
+    y, x = np.mgrid[:160, :360]
+    spot = np.exp(-((x % 180 - 90) / 18) ** 2 - ((y - 80) / 18) ** 2)
+    base = np.repeat((100 + 90 * spot).astype(np.uint8)[..., None], 3, axis=2)
+    _, photo = cv2.imencode('.png', base)
+    _, texture = cv2.imencode('.png', np.full((40, 40, 3), 60, np.uint8))
+    layers = [dict(quad=[[start, 0], [start + 179, 0], [start + 179, 159], [start, 159]],
+                   face_count=1, grout_mm=0, surface_finish=finish)
+              for start, finish in ((0, 'matte'), (180, 'polished'))]
+    response = client.post('/render', data={'payload': json.dumps({'layers': layers})},
+        files=[('photo', ('room.png', photo.tobytes(), 'image/png')),
+               ('faces', ('matte.png', texture.tobytes(), 'image/png')),
+               ('faces', ('polished.png', texture.tobytes(), 'image/png'))])
+
+    assert response.status_code == 200
+    out = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR)
+    assert float(out[80, 270].mean()) > float(out[80, 90].mean()) + 10
+
+
+def test_polished_tiles_do_not_turn_matte_grout_into_a_reflection():
+    y, x = np.mgrid[:200, :320]
+    spot = np.exp(-((x - 200) / 24) ** 2 - ((y - 100) / 24) ** 2)
+    base = np.repeat((100 + 90 * spot).astype(np.uint8)[..., None], 3, axis=2)
+    _, photo = cv2.imencode('.png', base)
+    outputs = []
+    for finish in ('matte', 'polished'):
+        response = client.post('/render',
+            data={'payload': payload(quad=[[0, 0], [319, 0], [319, 199], [0, 199]],
+                tile_mm=[100, 100], floor_mm=[320, 200], px_per_mm=1,
+                grout_mm=4, grout_bgr=[30, 30, 30], surface_finish=finish)},
+            files={'photo': ('room.png', photo.tobytes(), 'image/png'),
+                   'faces': ('face.png', face_bytes(120), 'image/png')})
+        assert response.status_code == 200
+        outputs.append(cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR))
+
+    assert np.allclose(outputs[0][100, 200], outputs[1][100, 200], atol=1)
+    assert outputs[1][90, 190].mean() > outputs[0][90, 190].mean() + 10
+
+
 def test_tile_direction_turns_grain_and_preserves_rectangular_scale():
     _, photo = cv2.imencode('.png', np.full((100, 100, 3), 120, np.uint8))
     face = np.full((60, 20, 3), 220, np.uint8)

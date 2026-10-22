@@ -96,3 +96,50 @@ def select_surface(base_bgr: np.ndarray, points: list[list[float]],
         return outlines_from_mask(best_mask.astype(np.uint8) * 255, (width, height))
     except ValueError as error:
         raise ValueError("No surface was selected. Add an include point inside the surface.") from error
+
+
+def refine_floor_detection(base_bgr: np.ndarray, detected: dict) -> dict:
+    """Use a safe semantic-floor seed to trim false positives with EdgeSAM.
+
+    Intersecting the proposal with the semantic mask keeps known objects
+    protected. If EdgeSAM picks only a tile or cannot select a surface, retain
+    the semantic result instead of silently discarding most of the floor.
+    """
+    height, width = base_bgr.shape[:2]
+    factor = min(1.0, 1024 / max(width, height))
+    work = (max(2, round(width * factor)), max(2, round(height * factor)))
+    scale = np.array([(work[0] - 1) / (width - 1), (work[1] - 1) / (height - 1)])
+
+    def mask_of(geometry):
+        mask = np.zeros(work[::-1], np.uint8)
+        boundary = np.rint(np.array(geometry['floor_boundary']) * scale).astype(np.int32)
+        cv2.fillPoly(mask, [boundary], 255)
+        for hole in geometry['exclude']:
+            points = np.rint(np.array(hole) * scale).astype(np.int32)
+            cv2.fillPoly(mask, [points], 0)
+        return mask
+
+    floor = mask_of(detected)
+    distance = cv2.distanceTransform(np.pad(floor, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
+    # Padding makes photo edges count as boundaries, even for a full-image mask.
+    # Prefer the photo centre when several interior points are equally safe.
+    ys, xs = np.where(distance >= distance.max() * 0.99)
+    centre = (xs - (work[0] - 1) / 2) ** 2 + (ys - (work[1] - 1) / 2) ** 2
+    index = centre.argmin()
+    x, y = int(xs[index]), int(ys[index])
+    point = np.rint(np.array([x, y]) / scale).astype(int).tolist()
+    try:
+        selected = select_surface(base_bgr, [point], [1])
+    except ValueError:
+        return detected
+
+    refined = cv2.bitwise_and(floor, mask_of(selected))
+    _, components, stats, _ = cv2.connectedComponentsWithStats(refined, 8)
+    root = components[y, x]
+    if root == 0 or stats[root, cv2.CC_STAT_AREA] < np.count_nonzero(floor) * 0.6:
+        return detected
+    try:
+        result = outlines_from_mask((components == root).astype(np.uint8) * 255, (width, height))
+    except ValueError:
+        return detected
+    return {**result, 'selection_points': [[*point, 1]]}

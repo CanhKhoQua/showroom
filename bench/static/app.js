@@ -333,7 +333,8 @@ async function detectFloor() {
     const result = await response.json();
     if (version !== state.version) return;
     invalidate();
-    Object.assign(state, { boundary: result.floor_boundary, boundaryClosed: true, aiExclusions: result.exclude, selectedBoundary: -1 });
+    Object.assign(state, { boundary: result.floor_boundary, boundaryClosed: true, aiExclusions: result.exclude,
+      selectionPoints: result.selection_points || [], selectedBoundary: -1 });
     let estimated = false;
     if (!validFloor()) {
       // The plane is a true-size floor rectangle, so its dimensions replace the inputs.
@@ -591,7 +592,7 @@ async function createPreview(scope = 'current') {
         exclude: [...surface.ai_exclusions, ...surface.exclusions], face_count: faces.length,
         tile_mm: [Number(settings.tileW), Number(settings.tileD)], floor_mm: [Number(settings.floorW) * 1000, Number(settings.floorD) * 1000],
         grout_mm: Number(settings.groutMm), grout_bgr: settings.groutColour.match(/[a-f\d]{2}/gi).map(value => parseInt(value, 16)).reverse(),
-        layout: settings.layout, tile_rotation: Number(settings.tileRotation || 0), auto: settings.auto ? 'colour-deviation' : 'none' });
+        layout: settings.layout, tile_rotation: Number(settings.tileRotation || 0), surface_finish: settings.surfaceFinish || 'matte', auto: settings.auto ? 'colour-deviation' : 'none' });
     }
     form.append('payload', JSON.stringify({ layers }));
     const response = await fetch('/render', { method: 'POST', body: form, signal: controller.signal });
@@ -617,7 +618,7 @@ async function createPreview(scope = 'current') {
 
 $('go').onclick = () => createPreview();
 $('preview-all').onclick = () => createPreview('all');
-['floorW', 'floorD', 'tileW', 'tileD', 'groutMm', 'groutColour', 'layout', 'auto'].forEach(id => $(id).addEventListener('input', () => { clearErrors(); invalidate(); if (id === 'groutColour') $('colour-label').textContent = $('groutColour').value.toUpperCase(); }));
+['floorW', 'floorD', 'tileW', 'tileD', 'groutMm', 'groutColour', 'layout', 'surfaceFinish', 'auto'].forEach(id => $(id).addEventListener('input', () => { clearErrors(); invalidate(); if (id === 'groutColour') $('colour-label').textContent = $('groutColour').value.toUpperCase(); }));
 new ResizeObserver(fitImage).observe($('stage'));
 updateMaterials();
 const studioReady = Promise.all([loadMaterialCatalogue(), loadRoomLibrary()]);

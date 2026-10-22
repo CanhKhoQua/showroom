@@ -81,6 +81,11 @@ tile dimensions. Enter the measured width and depth of a floor, or width and
 height of a wall. The initial wall perspective is a selection bounding box;
 align its corners with the actual wall plane before judging the tile shape.
 
+Choose **Surface finish** for the active area: **Matte** keeps diffuse shading,
+**Satin** adds a soft sheen, and **Polished** gives stronger, narrower highlights.
+Each area saves its finish independently; older projects default to Matte.
+These are preview settings, not certified properties of the sample materials.
+
 Use the before/after slider to compare the preview with the original photo,
 then download the rendered image. Recreate the preview after changing an area.
 
@@ -95,6 +100,17 @@ Low-frequency lighting and contact shadows come from the original surface;
 unselected pixels remain unchanged. Float processing is restricted to the
 selected surface bounds to reduce memory and CPU use on large photos.
 
+Relative warm/cool light is estimated with masked per-channel filtering, so
+excluded objects do not contaminate it and a uniformly coloured old floor does
+not tint the new material. Subtle edge recess shading gives joints depth without
+embossing the printed texture. Satin and Polished highlights follow broad bright
+regions in the source photo; a separate tile mask keeps the grout matte.
+The colour and highlight maps are limited to 512 px
+on their longest side and run on the CPU without another model or dependency.
+This is an approximation from one photo: coloured patterns can be confused with
+lighting, and the renderer does not reconstruct mirror reflections or scene
+geometry. Accurate area selection, perspective and measured scale still matter.
+
 The two [EdgeSAM ONNX weights](https://github.com/chongzhou96/EdgeSAM) total
 about 36 MiB and are pinned by revision and SHA-256 in the Dockerfile. They run
 with ONNX Runtime's CPU provider using two threads, without PyTorch, CUDA, or an
@@ -104,7 +120,13 @@ complete license is in `renderer/edgesam-license.txt`.
 
 For an automatic starting point, upload the room and click **Detect floor**.
 SegFormer B4 runs locally on two CPU threads and returns an editable outline of
-the dominant floor region, with detected object holes protected. Review the
+the dominant floor region, with detected object holes protected. EdgeSAM then
+refines it from an automatically chosen interior point to trim foreground
+objects and adjoining surfaces that were incorrectly classified as floor.
+The refinement cannot expand into semantic non-floor regions. If it selects
+only a small patch or cannot select a surface, the original detection is kept.
+Successful refinement retains its include point, so **Point select** can add
+include/exclude points without starting over. Review the
 outline, especially rugs and object edges, before rendering. The outline edge
 is snapped to colour edges in the photo, because the model itself only predicts
 at a quarter of its input resolution. Confident non-floor predictions remain
@@ -291,6 +313,17 @@ for floor-only, wall-only, and explicit whole-room previews in Chromium and
 WebKit. It also checks named areas and that an unfinished wall cannot block a
 floor-only preview. `SHOWROOM_TEST_PROJECT` can select an existing photo fixture;
 these scope checks keep all changes inside their browser session.
+
+`node tests/browser_material_finish.cjs` checks independent floor/wall finishes,
+server save/reload, whole-room rendering and Matte defaults for older projects
+in Chromium and WebKit.
+
+`node tests/browser_floor_detection.cjs` covers upload, automatic floor detection,
+preview and save-copy in Chromium and WebKit. `SHOWROOM_TEST_PHOTO` selects a
+local photo fixture, including HEIC; optional `SHOWROOM_FLOOR_CHECKS` is JSON with
+`inside` and `outside` arrays of original-photo pixel coordinates and
+`max_size_m` for a perspective sanity check. Photos remain local and the check
+saves a separate project; artifacts are written to `artifacts/floor-detection-check/`.
 
 ## Logs and shutdown
 
