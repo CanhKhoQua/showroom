@@ -7,6 +7,89 @@ import pytest
 from renderer.masking import build_mask
 
 
+def test_automatic_refinement_removes_false_floor_but_retains_semantic_object_holes(monkeypatch):
+    module = importlib.import_module('renderer.surface_selection')
+    base = np.zeros((400, 600, 3), np.uint8)
+    detected = {'floor_boundary': [[0, 100], [599, 100], [599, 399], [0, 399]],
+                'exclude': [[[70, 200], [110, 200], [110, 240], [70, 240]]]}
+
+    def select(image, points, labels):
+        x, y = points[0]
+        assert 0 < x < 599 and 100 < y < 399
+        assert not (70 <= x <= 110 and 200 <= y <= 240)
+        assert labels == [1]
+        return {'floor_boundary': [[0, 80], [599, 80], [599, 330], [0, 330]],
+                'exclude': [[[300, 200], [340, 200], [340, 240], [300, 240]]]}
+
+    monkeypatch.setattr(module, 'select_surface', select)
+    result = module.refine_floor_detection(base, detected)
+    mask = build_mask(base, [(0, 0), (599, 0), (599, 399), (0, 399)],
+                      floor_boundary=result['floor_boundary'], exclude=result['exclude'])
+
+    assert mask[300, 200] == 255
+    assert mask[370, 200] == 0  # foreground object incorrectly called floor
+    assert mask[90, 200] == 0  # EdgeSAM cannot grow into a semantic non-floor
+    assert mask[220, 90] == 0  # existing semantic object hole
+    assert mask[220, 320] == 0  # new EdgeSAM object hole
+    assert len(result['selection_points']) == 1
+    x, y, label = result['selection_points'][0]
+    assert mask[y, x] == 255 and label == 1
+
+
+def test_automatic_refinement_keeps_semantic_floor_when_a_single_tile_is_selected(monkeypatch):
+    module = importlib.import_module('renderer.surface_selection')
+    detected = {'floor_boundary': [[0, 100], [599, 100], [599, 399], [0, 399]], 'exclude': []}
+
+    def select(image, points, labels):
+        x, y = points[0]
+        return {'floor_boundary': [[x-10, y-10], [x+10, y-10], [x+10, y+10], [x-10, y+10]], 'exclude': []}
+
+    monkeypatch.setattr(module, 'select_surface', select)
+
+    assert module.refine_floor_detection(np.zeros((400, 600, 3), np.uint8), detected) == detected
+
+
+def test_automatic_refinement_keeps_semantic_floor_if_edge_model_cannot_select_it(monkeypatch):
+    module = importlib.import_module('renderer.surface_selection')
+    detected = {'floor_boundary': [[0, 100], [599, 100], [599, 399], [0, 399]], 'exclude': []}
+
+    def select(image, points, labels):
+        raise ValueError('No surface was selected.')
+
+    monkeypatch.setattr(module, 'select_surface', select)
+
+    assert module.refine_floor_detection(np.zeros((400, 600, 3), np.uint8), detected) == detected
+
+
+def test_automatic_refinement_keeps_a_valid_narrow_floor_when_trimming_makes_it_too_small(monkeypatch):
+    module = importlib.import_module('renderer.surface_selection')
+    detected = {'floor_boundary': [[100, 300], [200, 300], [200, 315], [100, 315]], 'exclude': []}
+
+    def select(image, points, labels):
+        return {'floor_boundary': [[100, 295], [200, 295], [200, 310], [100, 310]], 'exclude': []}
+
+    monkeypatch.setattr(module, 'select_surface', select)
+
+    assert module.refine_floor_detection(np.zeros((400, 600, 3), np.uint8), detected) == detected
+
+
+def test_automatic_seed_uses_original_photo_coordinates_and_survives_image_edges(monkeypatch):
+    module = importlib.import_module('renderer.surface_selection')
+    base = np.zeros((2400, 1800, 3), np.uint8)
+    detected = {'floor_boundary': [[0, 0], [1799, 0], [1799, 2399], [0, 2399]], 'exclude': []}
+
+    def select(image, points, labels):
+        x, y = points[0]
+        assert 850 < x < 950 and 1150 < y < 1250
+        return detected
+
+    monkeypatch.setattr(module, 'select_surface', select)
+    result = module.refine_floor_detection(base, detected)
+
+    assert max(point[0] for point in result['floor_boundary']) == 1799
+    assert max(point[1] for point in result['floor_boundary']) == 2399
+
+
 @pytest.fixture
 def selector(monkeypatch):
     module = importlib.import_module("renderer.surface_selection")

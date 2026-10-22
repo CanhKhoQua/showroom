@@ -1,7 +1,7 @@
 'use strict';
 
 window.showroomWorkspace = (() => {
-  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation'];
+  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation', 'surfaceFinish'];
 
   function capture() {
     if (!state.photo || state.loadingPhoto || state.loadingTextures) throw new Error('Wait for the room photo and textures to finish opening.');
@@ -59,6 +59,7 @@ window.showroomWorkspace = (() => {
       });
       fields.forEach(id => { if (snapshot.settings[id] !== undefined) $(id).value = snapshot.settings[id]; });
       if (snapshot.settings.tileRotation === undefined) $('tileRotation').value = '0';
+      if (snapshot.settings.surfaceFinish === undefined) $('surfaceFinish').value = 'matte';
       $('auto').checked = snapshot.settings.auto === true;
       $('colour-label').textContent = $('groutColour').value.toUpperCase();
       $('custom-note').textContent = faces.length ? `${faces.length} texture ${faces.length === 1 ? 'image' : 'images'} selected` : 'Add one or more tile images';

@@ -1,7 +1,7 @@
 'use strict';
 
 window.showroomSurfaces = (() => {
-  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation'];
+  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation', 'surfaceFinish'];
   let pointLabel = 1;
   let addingKind = null;
   let lastByKind = {};
@@ -61,7 +61,7 @@ window.showroomSurfaces = (() => {
       customFaces: [...surface.custom_faces], selectionPoints: structuredClone(surface.selection_points || []),
       selectedCorner: -1, selectedBoundary: -1,
     });
-    fields.forEach(id => { $(id).value = surface.settings[id] ?? (id === 'tileRotation' ? '0' : $(id).value); });
+    fields.forEach(id => { $(id).value = surface.settings[id] ?? (id === 'surfaceFinish' ? 'matte' : id === 'tileRotation' ? '0' : $(id).value); });
     $('auto').checked = surface.settings.auto === true;
     $('colour-label').textContent = $('groutColour').value.toUpperCase();
     $('custom-note').textContent = state.customFaces.length ? `${state.customFaces.length} texture images selected` : 'Add one or more tile images';

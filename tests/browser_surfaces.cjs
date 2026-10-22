@@ -55,7 +55,7 @@ async function preview(page, layers) {
     console.log('PASS CPU point selection, exclusion and undo on the actual photo');
 
     await page.locator('#wall-tab').click();
-    await pick(page, sourceId ? 1000/3024 : .15, sourceId ? 1500/4032 : .2);
+    await pick(page, sourceId ? 1000/3024 : .08, sourceId ? 1500/4032 : .45);
     await page.getByRole('button', {name:/Ivory limestone,/}).click();
     await page.locator('#floorW').fill('3'); await page.locator('#floorD').fill('2.4');
     await page.locator('#surface-name').fill('Wall by the door');
@@ -110,7 +110,7 @@ async function preview(page, layers) {
     await page.locator('#cv').scrollIntoViewIfNeeded();
     const bounds = await page.locator('#cv').boundingBox();
     const response = page.waitForResponse(r=>r.url().endsWith('/select-surface'));
-    await page.touchscreen.tap(bounds.x+bounds.width*(sourceId?1000/3024:.15),bounds.y+bounds.height*(sourceId?1500/4032:.2));
+    await page.touchscreen.tap(bounds.x+bounds.width*(sourceId?1000/3024:.08),bounds.y+bounds.height*(sourceId?1500/4032:.45));
     assert.equal((await response).status(),200);
     await page.waitForFunction(()=>!state.busy);
     await preview(page,2);

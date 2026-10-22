@@ -52,9 +52,53 @@ def lighting_gain(base_bgr: np.ndarray, mask: np.ndarray, sigma: float = 41.0,
     return np.clip(low / reference * shadow, lo, hi)
 
 
+def _surface_light(base: np.ndarray, mask: np.ndarray, surface_finish: str):
+    """Estimate relative light colour and broad highlights, not old albedo.
+
+    Per-channel normalisation removes the old surface's constant colour.
+    Masked filtering excludes furniture before downsampling; the small light
+    maps limit CPU/memory use. A single photo cannot recover true reflections.
+    """
+    height, width = mask.shape
+    scale = min(1.0, 512 / max(height, width))
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    weights = mask.astype(np.float32) / 255.0
+    support = cv2.resize(weights, size, interpolation=cv2.INTER_AREA)
+    sigma = max(3.0, min(size) / 18.0)
+
+    def smooth(values, radius):
+        denominator = cv2.GaussianBlur(support, (0, 0), radius,
+                                       borderType=cv2.BORDER_CONSTANT)
+        numerator = cv2.GaussianBlur(values, (0, 0), radius,
+                                     borderType=cv2.BORDER_CONSTANT)
+        return numerator / np.maximum(denominator, 1e-6)
+
+    light = np.empty((*support.shape, 3), np.float32)
+    luminance = np.zeros_like(support)
+    for channel, coefficient in enumerate((0.0722, 0.7152, 0.2126)):
+        values = cv2.resize(_SRGB_TO_LINEAR[base[..., channel]] * weights,
+                            size, interpolation=cv2.INTER_AREA)
+        mean = float(values.sum() / max(float(support.sum()), 1e-6))
+        light[..., channel] = smooth(values, sigma) / mean if mean > 1e-6 else 1.0
+        luminance += values * coefficient
+    neutral = light @ np.array([0.0722, 0.7152, 0.2126], np.float32)
+    colour = np.sqrt(np.clip(light / np.maximum(neutral[..., None], 1e-6), 0.65, 1.45))
+
+    highlights = np.zeros_like(support)
+    if surface_finish != 'matte':
+        radius = sigma if surface_finish == 'satin' else max(1.0, sigma / 3)
+        fine = smooth(luminance, radius)
+        broad = smooth(luminance, sigma * 3)
+        reference = float(luminance.sum() / max(float(support.sum()), 1e-6))
+        highlights = np.clip((fine - broad) / max(reference, 1e-6) - 0.08, 0, 1)
+        highlights *= 0.06 if surface_finish == 'satin' else 0.18
+    return colour, highlights
+
+
 def render(base_bgr: np.ndarray, sheet: np.ndarray, quad: Quad,
            mask: np.ndarray | None = None, strength: float = 1.0,
-           feather: float = 2.0) -> np.ndarray:
+           feather: float = 2.0, surface_finish: str = 'matte',
+           reflectance: np.ndarray | None = None) -> np.ndarray:
     if mask is None:
         mask = quad_mask_of(base_bgr.shape, quad)
     x, y, width, height = cv2.boundingRect(mask)
@@ -77,6 +121,18 @@ def render(base_bgr: np.ndarray, sheet: np.ndarray, quad: Quad,
 
     gain = lighting_gain(base, mask, sigma=max(9.0, min(height, width) / 18.0))
     lit *= gain[..., None] ** strength
+    colour, highlights = _surface_light(base, mask, surface_finish)
+    if surface_finish != 'matte':
+        reflection = cv2.resize(highlights, (width, height), interpolation=cv2.INTER_LINEAR)
+        if reflectance is not None:
+            coverage = cv2.warpPerspective(reflectance, homography, (width, height),
+                                           flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            reflection *= coverage.astype(np.float32) / 255.0
+    for channel in range(3):
+        tint = cv2.resize(colour[..., channel], (width, height), interpolation=cv2.INTER_LINEAR)
+        lit[..., channel] *= tint ** strength
+        if surface_finish != 'matte':
+            lit[..., channel] += reflection * tint * strength
     # Near-white linear highlights roll off without dimming ordinary materials.
     lit = soft_clip(lit * 255.0, knee=0.95) / 255.0
     alpha = mask.astype(np.float32) / 255.0

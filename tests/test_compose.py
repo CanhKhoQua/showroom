@@ -114,6 +114,62 @@ def test_render_preserves_material_color_in_uniform_light(color):
     assert np.allclose(out[50, 70], color, atol=1)
 
 
+def test_render_carries_local_warm_and_cool_light_onto_a_neutral_material():
+    base = np.full((160, 400, 3), 140, np.uint8)
+    base[:, :200] = (110, 140, 170)
+    base[:, 200:] = (170, 140, 110)
+    sheet = np.full((160, 400, 3), 180, np.uint8)
+    quad = [(0, 0), (399, 0), (399, 159), (0, 159)]
+
+    out = render(base, sheet, quad, feather=0)
+
+    assert int(out[80, 70, 2]) - int(out[80, 70, 0]) > 15
+    assert int(out[80, 330, 0]) - int(out[80, 330, 2]) > 15
+
+
+def test_render_does_not_tint_a_new_material_with_uniform_old_floor_color():
+    base = np.full((120, 200, 3), (60, 110, 170), np.uint8)
+    sheet = np.full((60, 100, 3), (180, 190, 200), np.uint8)
+    quad = [(0, 0), (199, 0), (199, 119), (0, 119)]
+
+    out = render(base, sheet, quad, feather=0)
+
+    assert np.allclose(out[60, 100], (180, 190, 200), atol=1)
+
+
+def test_surface_finish_controls_only_photo_driven_highlights():
+    y, x = np.mgrid[:200, :320]
+    gray = (100 + 90 * np.exp(-((x - 200) / 24) ** 2 - ((y - 100) / 24) ** 2)).astype(np.uint8)
+    base = np.repeat(gray[..., None], 3, axis=2)
+    sheet = np.full((100, 160, 3), (35, 60, 85), np.uint8)
+    quad = [(0, 0), (319, 0), (319, 199), (0, 199)]
+    outputs = [render(base, sheet, quad, feather=0, surface_finish=finish)
+               for finish in ('matte', 'satin', 'polished')]
+
+    peaks = [float(out[100, 200].mean()) for out in outputs]
+    assert peaks[0] + 3 < peaks[1] < peaks[2] - 3
+    # There is no reflected light source in the opposite corner.
+    assert np.allclose(outputs[0][30, 30], outputs[2][30, 30], atol=1)
+    # A neutral highlight desaturates the dark material, rather than scaling it.
+    saturation = [np.ptp(out[100, 200].astype(float)) / out[100, 200].max() for out in outputs]
+    assert saturation[2] < saturation[0] - 0.08
+
+
+def test_colored_excluded_objects_do_not_tint_or_reflect_onto_the_material():
+    base = np.full((160, 240, 3), 120, np.uint8)
+    mask = np.zeros((160, 240), np.uint8)
+    mask[20:140, 20:220] = 255
+    mask[60:100, 100:140] = 0
+    base[mask == 0] = (255, 20, 200)
+    sheet = np.full((120, 200, 3), 180, np.uint8)
+    quad = [(20, 20), (220, 20), (220, 140), (20, 140)]
+
+    out = render(base, sheet, quad, mask=mask, feather=0, surface_finish='polished')
+
+    assert np.allclose(out[mask > 0], 180, atol=1)
+    assert np.array_equal(out[mask == 0], base[mask == 0])
+
+
 def test_render_blends_partial_coverage_in_linear_light():
     base = np.zeros((80, 100, 3), np.uint8)
     sheet = np.full((40, 60, 3), 255, np.uint8)

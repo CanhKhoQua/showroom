@@ -34,11 +34,13 @@ def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
                      floor_mm: tuple[float, float], px_per_mm: float,
                      layout: str = "grid", grout_mm: float = 2.0,
                      grout_bgr: tuple[int, int, int] = (205, 205, 205),
-                     seed: int = 7) -> np.ndarray:
+                     seed: int = 7, reflectance: np.ndarray | None = None) -> np.ndarray:
     """Top-down BGR image of the tiled floor, before any perspective.
 
     faces must be the distinct printed faces of ONE sku. Stone-look tiles ship
     4-8 of them; using only one makes the rendered floor visibly repeat.
+    Optional uint8 reflectance output must match the sheet's height/width;
+    tile faces reflect highlights, while the grout remains matte.
     """
     tile_w_mm, tile_d_mm = tile_mm
     floor_w_mm, floor_d_mm = floor_mm
@@ -54,12 +56,37 @@ def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
     sheet = np.full((height, width, 3), np.array(grout_bgr, np.uint8), np.uint8)
     resized = [cv2.resize(f, (tile_w - gap, tile_h - gap),
                           interpolation=cv2.INTER_AREA) for f in faces]
+    face_reflectance = None
+    if reflectance is not None:
+        reflectance.fill(0)
+        face_reflectance = np.full(resized[0].shape[:2], 255, np.uint8)
+
+    if grout_mm > 0:
+        # A sub-millimetre edge recess adds contact depth without embossing
+        # the printed grain. Fractional coverage keeps thin edges subtle.
+        face_h, face_w = resized[0].shape[:2]
+        bevel = min(0.6 * px_per_mm, min(face_w, face_h) / 8)
+        for inset in range(int(np.ceil(bevel))):
+            shade = 1 - 0.12 * min(1.0, bevel - inset)
+            for image in resized:
+                # Shade only the perimeter; full-face float buffers are costly
+                # for large uploaded textures. Avoid shading corners twice.
+                horizontal = image[[inset, -1 - inset], inset:face_w - inset]
+                image[[inset, -1 - inset], inset:face_w - inset] = np.rint(horizontal * shade)
+                vertical = image[inset + 1:face_h - 1 - inset, [inset, -1 - inset]]
+                image[inset + 1:face_h - 1 - inset, [inset, -1 - inset]] = np.rint(vertical * shade)
+            if face_reflectance is not None:
+                face_reflectance[[inset, -1 - inset], inset:face_w - inset] = round(255 * shade)
+                face_reflectance[inset + 1:face_h - 1 - inset, [inset, -1 - inset]] = round(255 * shade)
 
     # Stagger along the long axis of upright planks without rotating their grain.
     vertical_brick = layout == "brick" and tile_h > tile_w
     if vertical_brick:
         sheet = sheet.transpose(1, 0, 2)
         resized = [image.transpose(1, 0, 2) for image in resized]
+        if reflectance is not None:
+            reflectance = reflectance.T
+            face_reflectance = face_reflectance.T
         width, height = height, width
         tile_w, tile_h = tile_h, tile_w
 
@@ -70,6 +97,8 @@ def build_tile_sheet(faces: list[np.ndarray], tile_mm: tuple[float, float],
         while x < width:
             paste(sheet, resized[int(rng.integers(len(resized)))],
                   x + gap // 2, y + gap // 2)
+            if reflectance is not None:
+                paste(reflectance, face_reflectance, x + gap // 2, y + gap // 2)
             x += tile_w
         y += tile_h
         row += 1

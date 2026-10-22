@@ -26,6 +26,32 @@ def test_grout_colour_survives_between_tiles():
     assert (sheet == np.array(grout, np.uint8)).all(axis=2).any()
 
 
+def test_tile_edges_have_subtle_depth_even_when_face_and_grout_colors_match():
+    sheet = build_tile_sheet([face(180)], (100, 100), (200, 200), 1,
+                             grout_mm=4, grout_bgr=(180, 180, 180))
+
+    assert 160 < sheet[50, 2, 0] < sheet[50, 10, 0] == 180
+    assert sheet[50, 0, 0] == 180
+    assert sheet[50, 97, 0] == sheet[50, 2, 0]
+
+
+def test_zero_grout_keeps_a_continuous_material_without_artificial_edge_shadows():
+    sheet = build_tile_sheet([face(180)], (100, 100), (200, 200), 1, grout_mm=0)
+
+    assert np.all(sheet == 180)
+
+
+def test_reflection_mask_follows_staggered_vertical_plank_joints():
+    reflectance = np.empty((240, 80), np.uint8)
+    build_tile_sheet([face(200)], (200, 1200), (800, 2400), 0.1,
+                     layout='brick', grout_mm=20, reflectance=reflectance)
+
+    assert reflectance[120, 10] == 0
+    assert reflectance[120, 30] == 255
+    assert reflectance[180, 10] == 255
+    assert reflectance[180, 30] == 0
+
+
 def test_same_seed_gives_identical_sheet():
     faces = [face(100), face(150), face(200), face(250)]
     a = build_tile_sheet(faces, (600, 600), (3000, 3000), 0.4, seed=7)
