@@ -2,6 +2,11 @@
 
 A local tool for testing floor and wall tile renders on room photos.
 
+- Select floor and wall areas with clicks, then refine their outlines and perspective.
+- Preview one area or combine floors and walls, each with its own material and scale.
+- Save editable projects on the server and reopen them from another device on the LAN.
+- Build multi-room floor estimates from measured dimensions and supplier pricing.
+
 ## Run with Docker
 
 Docker with the Compose plugin is required. Python dependencies are installed
@@ -23,6 +28,8 @@ resets the previous outline and preview; custom texture selections are retained.
 Floor dimensions in the presets are illustrative estimates, not measurements
 for a quote. Uploading a customer photo clears the preset selection.
 
+### Select floor and wall areas
+
 To use your own photo, click **Upload room**, choose **Point select**, and click
 **Include area** before clicking inside the floor or wall. Switch to
 **Exclude object** and click rugs, furniture, or adjoining surfaces that should
@@ -42,6 +49,14 @@ Use **Area name** to identify an area, for example "Wall by the door". Choose
 needed. A **Choose area** list appears only when that type has multiple areas.
 Remove area deletes only the selected area. Projects retain all areas, their
 names, and the last active one.
+
+| Action | Result |
+| --- | --- |
+| **Preview floor** | Renders the selected floor area only. |
+| **Preview wall** | Renders the selected wall area only. |
+| **Preview whole room** | Combines all started floor and wall areas. |
+
+### Align the material
 
 Use **Perspective** to mark four corners in this
 order: far-left, far-right, near-right, near-left. Drag the handles to align
@@ -65,6 +80,15 @@ including upright wood planks, while retaining the source grain direction.
 tile dimensions. Enter the measured width and depth of a floor, or width and
 height of a wall. The initial wall perspective is a selection bounding box;
 align its corners with the actual wall plane before judging the tile shape.
+
+Use the before/after slider to compare the preview with the original photo,
+then download the rendered image. Recreate the preview after changing an area.
+
+HEIC and HEIF room photos and texture images are decoded inside Docker and
+converted to an upright PNG automatically before editing. JPG, PNG and WebP
+images can also be uploaded directly.
+
+### Rendering and local models
 
 Texture interpolation, illumination, and edge blending use linear light.
 Low-frequency lighting and contact shadows come from the original surface;
@@ -108,13 +132,6 @@ is derived from [NVIDIA SegFormer B4 on ADE20K](https://huggingface.co/nvidia/se
 Its [NVIDIA license](https://github.com/NVlabs/SegFormer/blob/master/LICENSE)
 limits use to non-commercial research or evaluation; this experimental bench
 uses it for evaluation. The complete license is in `renderer/segformer-license.txt`.
-
-HEIC and HEIF room photos and texture images are decoded inside Docker and
-converted to an upright PNG automatically before editing. JPG, PNG and WebP
-images can also be uploaded directly.
-
-Click **Create preview**, use the before/after slider to compare the result with the
-original photo, then download the rendered image.
 
 The bench is bound to localhost by default. Rebuild the image after changing
 source code. See **Shared server projects** below for access from the local network.
@@ -168,7 +185,9 @@ Catalogue tile dimensions are rendering presets and do not certify a product.
 ## Multi-room floor estimates
 
 The **Floor estimate** panel combines measured floors by product code before
-rounding to whole boxes. Set the floor dimensions in metres and actual tile
+rounding to whole boxes. Select a floor area before entering its measured
+dimensions; generating a preview does not add quantities to the estimate.
+Set the floor dimensions in metres and actual tile
 dimensions in millimetres in the material panel, then enter a room name, product
 code, tiles per box, price per box in VND and waste percentage. Confirm that the
 dimensions are measured, then choose **Add floor to estimate** for each room.
@@ -201,10 +220,12 @@ exact box boundary does not acquire an extra tile through floating-point error.
 ## Shared server projects
 
 Enter a project name and choose **Save project**. The server stores the current
-room, uploaded photo and textures, editable floor geometry, and all added floors
+room, uploaded photo and textures, all named floor and wall areas with their
+geometry, materials, dimensions and last active selection, and all added floors
 with their quote data. The project link restores this information after a reload
 or from a separate browser or device. A saved preview can be recreated with
-**Create preview**. Edits require another save; the page shows unsaved changes
+**Preview floor**, **Preview wall**, or **Preview whole room**.
+Edits require another save; the page shows unsaved changes
 and asks before leaving them. **New project** opens a fresh workspace, and
 **Save a copy** keeps a separate version under a new link.
 
