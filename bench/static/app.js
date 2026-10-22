@@ -21,9 +21,11 @@ function setBusy(busy) {
   $('render-overlay').querySelector('span:last-child').textContent = state.selectingSurface || state.detectingFloor ? 'Preparing an outline you can adjust.' : 'Keeping the room’s light and perspective.';
   $('go').disabled = busy || state.loadingPhoto || state.loadingTextures;
   $('go').setAttribute('aria-busy', String(busy || state.loadingPhoto || state.loadingTextures));
-  $('render-label').textContent = busy ? state.detectingFloor ? 'Finding the floor…' : 'Creating preview…' : state.loadingPhoto ? 'Opening room…' : state.loadingTextures ? 'Opening textures…' : 'Create preview';
+  const kind = window.showroomSurfaces?.current()?.kind || 'floor';
+  $('render-label').textContent = busy ? state.detectingFloor ? 'Finding the floor…' : 'Creating preview…' : state.loadingPhoto ? 'Opening room…' : state.loadingTextures ? 'Opening textures…' : `Preview ${kind}`;
+  $('preview-all').disabled = $('go').disabled;
   $('detect-floor').disabled = !state.photo || busy || state.loadingPhoto || state.loadingTextures;
-  ['surface-select', 'add-floor', 'add-wall'].forEach(id => { $(id).disabled = busy || state.loadingPhoto || state.loadingTextures; });
+  ['surface-select', 'add-floor', 'add-wall', 'floor-tab', 'wall-tab', 'surface-name', 'confirm-add-area', 'new-area-name'].forEach(id => { $(id).disabled = busy || state.loadingPhoto || state.loadingTextures; });
   $('remove-surface').disabled = busy || state.loadingPhoto || state.loadingTextures || state.surfaces.length < 2;
 }
 
@@ -544,21 +546,16 @@ function validFloor(q = state.quad) {
   return turns.every(value => value > 0) && Math.abs(q.reduce((sum, p, i) => sum + p[0] * q[(i + 1) % 4][1] - p[1] * q[(i + 1) % 4][0], 0)) > 100;
 }
 
-async function createPreview() {
+async function createPreview(scope = 'current') {
   let controller = null, version = state.version;
   try {
     if (state.loadingPhoto) throw new Error('Wait for the room photo to finish opening.');
     if (state.loadingTextures) throw new Error('Wait for the texture images to finish opening.');
     if (!state.photo) throw new Error('Upload a room photo, or use Try demo to get started.');
-    if (state.boundary.length && !state.boundaryClosed) throw new Error('Finish the surface outline before creating a preview.');
-    if (!validFloor()) throw new Error('Select four surface corners clockwise: far-left, far-right, near-right, near-left.');
-    if (state.boundaryClosed && state.boundary.some(([x, y]) => state.quad.some(([ax, ay], index) => {
-      const [bx, by] = state.quad[(index + 1) % 4];
-      return (bx - ax) * (y - ay) - (by - ay) * (x - ax) < -2 * Math.hypot(bx - ax, by - ay);
-    }))) throw new Error('The surface outline extends beyond the perspective plane. Move the Perspective corners outside the outline, then try again.');
-    if (!state.material && !state.customFaces.length) throw new Error('Choose a material or upload your own texture.');
-    validateSettings();
-    const surfaces = window.showroomSurfaces.capture().filter(surface => surface.quad.length || surface.boundary.length);
+    if (scope !== 'all') validateSettings();
+    const surfaces = window.showroomSurfaces.capture().filter(surface => scope === 'all'
+      ? surface.quad.length || surface.boundary.length : surface.id === state.activeSurfaceId);
+    if (!surfaces.length) throw new Error('Select an area before creating a preview.');
     for (const surface of surfaces) {
       if (!validFloor(surface.quad) || (surface.boundary.length && !surface.boundary_closed)) throw new Error(`${surface.name}: finish its outline and align four Perspective corners.`);
       for (const id of ['floorW', 'floorD', 'tileW', 'tileD', 'groutMm']) {
@@ -574,7 +571,8 @@ async function createPreview() {
     version = state.version;
     controller = new AbortController();
     state.request = controller;
-    setBusy(true); status('Rendering your selected material…', 'busy');
+    const target = scope === 'all' ? 'Whole room' : surfaces[0].name;
+    setBusy(true); status(`Rendering ${target.toLowerCase()}…`, 'busy');
     const started = performance.now(), form = new FormData();
     form.append('photo', state.photo, 'room-photo');
     const layers = [];
@@ -605,7 +603,10 @@ async function createPreview() {
     try { await $('result').decode(); } catch { URL.revokeObjectURL(url); throw new Error('The preview image could not be opened. Please try again.'); }
     if (version !== state.version) { URL.revokeObjectURL(url); return; }
     state.resultUrl = url;
+    document.querySelector('.after-label').textContent = `${target} preview`;
+    $('result').alt = `Room preview: ${target}`;
     $('download').href = url; $('download').hidden = false;
+    $('download').download = `showroom-${scope === 'all' ? 'whole-room' : surfaces[0].kind}-preview.png`;
     $('compare-view').disabled = false;
     setComparison(50);
     setView(true);
@@ -614,7 +615,8 @@ async function createPreview() {
   finally { if (controller && state.request === controller) { state.request = null; setBusy(false); } }
 }
 
-$('go').onclick = createPreview;
+$('go').onclick = () => createPreview();
+$('preview-all').onclick = () => createPreview('all');
 ['floorW', 'floorD', 'tileW', 'tileD', 'groutMm', 'groutColour', 'layout', 'auto'].forEach(id => $(id).addEventListener('input', () => { clearErrors(); invalidate(); if (id === 'groutColour') $('colour-label').textContent = $('groutColour').value.toUpperCase(); }));
 new ResizeObserver(fitImage).observe($('stage'));
 updateMaterials();

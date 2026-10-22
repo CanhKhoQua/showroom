@@ -26,7 +26,7 @@ async function pick(page, x, y, exclude = false) {
 
 async function preview(page, layers) {
   const response = page.waitForResponse(r => r.url().endsWith('/render'));
-  await page.locator('#go').click();
+  await page.locator(layers > 1 ? '#preview-all' : '#go').click();
   const result = await response;
   assert.equal(result.status(), 200, result.status() === 200 ? '' : await result.text());
   await page.waitForFunction(() => document.querySelector('#status-text').textContent.startsWith('Preview ready'));
@@ -54,17 +54,19 @@ async function preview(page, layers) {
     const floor = await page.evaluate(() => showroomSurfaces.capture()[0]);
     console.log('PASS CPU point selection, exclusion and undo on the actual photo');
 
-    await page.locator('#add-wall').click();
+    await page.locator('#wall-tab').click();
     await pick(page, sourceId ? 1000/3024 : .15, sourceId ? 1500/4032 : .2);
     await page.getByRole('button', {name:/Ivory limestone,/}).click();
     await page.locator('#floorW').fill('3'); await page.locator('#floorD').fill('2.4');
+    await page.locator('#surface-name').fill('Wall by the door');
+    await page.locator('#surface-name').press('Tab');
     assert.equal(await page.locator('#surface-depth-label').textContent(), 'Height');
-    await page.locator('#surface-select').selectOption('floor-1');
+    await page.locator('#floor-tab').click();
     assert.equal(await page.locator('#floorD').inputValue(), '2.52');
     assert.equal(await page.evaluate(() => state.material.id), floor.material_id);
     assert.deepEqual(await page.evaluate(() => state.quad), floor.quad);
     await page.locator('#tileRotation').selectOption('90');
-    await page.locator('#surface-select').selectOption('wall-1');
+    await page.locator('#wall-tab').click();
     assert.equal(await page.locator('#floorD').inputValue(), '2.4');
     assert.equal(await page.locator('#tileRotation').inputValue(), '0');
     await preview(page, 2);
@@ -79,9 +81,10 @@ async function preview(page, layers) {
     assert(copyId && copyId !== sourceId);
     await page.reload();
     await page.waitForFunction(() => !document.querySelector('#project-save').disabled);
-    assert.equal(await page.locator('#surface-select option').count(), 2);
+    assert.equal(await page.evaluate(()=>state.surfaces.length), 2);
     assert.equal(await page.locator('#surface-select').inputValue(), 'wall-1');
-    await page.locator('#surface-select').selectOption('floor-1');
+    assert.equal(await page.locator('#surface-name').inputValue(), 'Wall by the door');
+    await page.locator('#floor-tab').click();
     assert.equal(await page.locator('#tileRotation').inputValue(), '90');
     assert.equal(await page.evaluate(() => state.selectionPoints.length), 2);
     await preview(page, 2);
@@ -100,7 +103,7 @@ async function preview(page, layers) {
     const context = await safari.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
     const page = await context.newPage(); page.on('pageerror',error=>errors.push(error.message));
     await ready(page, `${base}/?project=${copyId}`);
-    await page.locator('#surface-select').selectOption('wall-1');
+    await page.locator('#wall-tab').click();
     assert.equal(await page.locator('#floorD').inputValue(),'2.4');
     await page.locator('#select-tool').tap();
     await page.locator('#include-point').tap();

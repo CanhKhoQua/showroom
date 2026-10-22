@@ -30,12 +30,18 @@ remain unchanged. Add points to refine the selection; Undo removes the last
 point. EdgeSAM runs on the local CPU and reuses the current photo embedding.
 Review the outline before creating a preview.
 
-Choose **Add floor** or **Add wall** to work on another surface in the same
-photo. Each surface retains its own selection, object protection, material,
-custom texture faces, dimensions, tile direction, and perspective. Switch
-between them using **Editing surface**. Create preview combines all started
-surfaces; untouched empty surfaces are skipped. Remove surface deletes only
-the selected layer. Projects store all surfaces and reopen the active one.
+Choose the **Floor** or **Wall** tab to edit that part of the room. Each area
+retains its own selection, object protection, material, custom texture faces,
+dimensions, tile direction, and perspective. **Preview floor** and **Preview
+wall** change only the active area; other areas keep the original photo.
+**Preview whole room** explicitly combines all started areas and skips untouched
+empty ones. An unfinished wall does not block a floor-only preview.
+
+Use **Area name** to identify an area, for example "Wall by the door". Choose
+**Add another floor/wall** and enter a descriptive name when another plane is
+needed. A **Choose area** list appears only when that type has multiple areas.
+Remove area deletes only the selected area. Projects retain all areas, their
+names, and the last active one.
 
 Use **Perspective** to mark four corners in this
 order: far-left, far-right, near-right, near-left. Drag the handles to align
@@ -258,6 +264,12 @@ and WebKit touch interaction. Set `SHOWROOM_TEST_PROJECT` to an existing photo
 project ID to use it as a fixture; the check saves a copy and keeps the source
 unchanged. `node tests/browser_surface_races.cjs` exercises delayed script
 initialization and custom-texture ownership during decoding.
+
+`node tests/browser_preview_scope.cjs` compares original and rendered pixels
+for floor-only, wall-only, and explicit whole-room previews in Chromium and
+WebKit. It also checks named areas and that an unfinished wall cannot block a
+floor-only preview. `SHOWROOM_TEST_PROJECT` can select an existing photo fixture;
+these scope checks keep all changes inside their browser session.
 
 ## Logs and shutdown
 

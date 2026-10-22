@@ -3,6 +3,8 @@
 window.showroomSurfaces = (() => {
   const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation'];
   let pointLabel = 1;
+  let addingKind = null;
+  let lastByKind = {};
 
   function current() {
     return state.surfaces.find(surface => surface.id === state.activeSurfaceId);
@@ -25,18 +27,30 @@ window.showroomSurfaces = (() => {
   }
 
   function update() {
-    $('surface-select').replaceChildren(...state.surfaces.map(surface => {
+    const kind = current()?.kind || 'floor';
+    const areas = state.surfaces.filter(surface => surface.kind === kind);
+    $('surface-select').replaceChildren(...areas.map(surface => {
       const option = document.createElement('option');
       option.value = surface.id; option.textContent = surface.name;
       return option;
     }));
     $('surface-select').value = state.activeSurfaceId || '';
+    $('surface-picker').hidden = areas.length < 2;
+    $('surface-name').value = current()?.name || '';
+    $('floor-tab').setAttribute('aria-pressed', String(kind === 'floor'));
+    $('wall-tab').setAttribute('aria-pressed', String(kind === 'wall'));
+    $('add-floor').hidden = kind !== 'floor';
+    $('add-wall').hidden = kind !== 'wall';
+    $('preview-all').hidden = state.surfaces.length < 2;
     $('remove-surface').disabled = state.surfaces.length < 2;
     $('surface-depth-label').textContent = current()?.kind === 'wall' ? 'Height' : 'Depth';
     $('detect-floor').hidden = current()?.kind === 'wall';
+    setBusy(state.busy);
   }
 
   function apply(surface) {
+    lastByKind[surface.kind] = surface.id;
+    $('new-area-form').hidden = true;
     state.textureLoad += 1;
     setPointLabel(1);
     Object.assign(state, {
@@ -57,20 +71,28 @@ window.showroomSurfaces = (() => {
   }
 
   function reset() {
+    lastByKind = {};
     setPointLabel(1);
     state.selectionPoints = [];
     state.activeSurfaceId = 'floor-1';
-    state.surfaces = [captureSurface({ id: 'floor-1', name: 'Floor 1', kind: 'floor' })];
+    state.surfaces = [captureSurface({ id: 'floor-1', name: 'Floor', kind: 'floor' })];
     update();
   }
 
-  function add(kind) {
+  function add(kind, areaName = null) {
     if (!state.photo || state.busy || state.loadingPhoto || state.loadingTextures) return;
     if (state.surfaces.length >= 12) { status('A project can contain up to 12 surfaces.', 'error'); return; }
+    if (!areaName && state.surfaces.some(surface => surface.kind === kind)) {
+      addingKind = kind;
+      $('new-area-form').hidden = false;
+      $('new-area-name').value = '';
+      $('new-area-name').focus();
+      return;
+    }
     store(); invalidate();
     let number = 1;
     while (state.surfaces.some(surface => surface.id === `${kind}-${number}`)) number += 1;
-    const name = `${kind === 'wall' ? 'Wall' : 'Floor'} ${number}`;
+    const name = areaName || (kind === 'wall' ? 'Wall' : 'Floor');
     state.activeSurfaceId = `${kind}-${number}`;
     const surface = captureSurface({ id: state.activeSurfaceId, name, kind });
     Object.assign(surface, { quad: [], boundary: [], boundary_closed: false, auto_plane: false,
@@ -83,6 +105,10 @@ window.showroomSurfaces = (() => {
   function restore(surfaces, activeId) {
     if (!surfaces?.length) { reset(); return; }
     state.surfaces = structuredClone(surfaces);
+    for (const surface of state.surfaces) {
+      const title = surface.kind === 'floor' ? 'Floor' : 'Wall';
+      if (surface.id === `${surface.kind}-1` && surface.name === `${title} 1`) surface.name = title;
+    }
     state.activeSurfaceId = surfaces.some(surface => surface.id === activeId) ? activeId : surfaces[0].id;
     apply(current());
   }
@@ -148,6 +174,33 @@ window.showroomSurfaces = (() => {
   $('exclude-point').onclick = () => setPointLabel(0);
   $('add-floor').onclick = () => add('floor');
   $('add-wall').onclick = () => add('wall');
+  function chooseKind(kind) {
+    if (state.busy || state.loadingPhoto || state.loadingTextures) return;
+    const surface = state.surfaces.find(area => area.id === lastByKind[kind]) || state.surfaces.find(area => area.kind === kind);
+    if (!surface) { add(kind); return; }
+    store(); invalidate(); state.activeSurfaceId = surface.id;
+    apply(current()); status(`Editing ${current().name.toLowerCase()}. Preview changes only this area.`);
+  }
+  $('floor-tab').onclick = () => chooseKind('floor');
+  $('wall-tab').onclick = () => chooseKind('wall');
+  $('surface-name').onchange = () => {
+    const name = $('surface-name').value.trim();
+    if (!name || state.surfaces.some(area => area.id !== state.activeSurfaceId && area.name.toLowerCase() === name.toLowerCase())) {
+      $('surface-name').value = current().name;
+      status('Give this area a unique name, such as Wall by the door.', 'error'); return;
+    }
+    current().name = name; window.dispatchEvent(new Event('projectchange')); update();
+  };
+  $('new-area-form').onsubmit = event => {
+    event.preventDefault();
+    const name = $('new-area-name').value.trim();
+    if (!name || state.surfaces.some(area => area.name.toLowerCase() === name.toLowerCase())) {
+      $('new-area-name').setCustomValidity('Use a different area name.'); $('new-area-name').reportValidity(); return;
+    }
+    add(addingKind, name);
+  };
+  $('new-area-name').oninput = () => $('new-area-name').setCustomValidity('');
+  $('cancel-add-area').onclick = () => { $('new-area-form').hidden = true; };
   $('surface-select').onchange = () => {
     if (state.busy || state.loadingPhoto || state.loadingTextures) return;
     store(); invalidate(); state.activeSurfaceId = $('surface-select').value;
