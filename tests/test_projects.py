@@ -57,6 +57,23 @@ def test_another_browser_can_open_the_same_project(client):
     assert other.post("/quote", json=request).json()["total"] == 1680000
 
 
+def test_project_preserves_independent_floor_and_wall_layers(client):
+    body = project()
+    geometry = {key: copy.deepcopy(value) for key, value in body['workspace'].items()
+                if key not in {'photo', 'room_id', 'name'}}
+    floor = {**copy.deepcopy(geometry), 'id': 'floor-1', 'name': 'Floor 1',
+             'kind': 'floor', 'selection_points': [[50, 70, 1], [20, 20, 0]]}
+    wall = {**copy.deepcopy(geometry), 'id': 'wall-1', 'name': 'Wall 1',
+            'kind': 'wall', 'selection_points': [[50, 30, 1]]}
+    wall['settings']['floorD'] = '2.4'
+    body['workspace'].update(surfaces=[floor, wall], active_surface_id='wall-1')
+    saved = client.post('/projects', json=body)
+    assert saved.status_code == 201
+    restored = client.get(f"/projects/{saved.json()['id']}").json()['workspace']
+    assert restored['surfaces'] == [floor, wall]
+    assert restored['active_surface_id'] == 'wall-1'
+
+
 def test_saved_project_is_not_held_in_process_memory(client):
     saved = client.post("/projects", json=project()).json()
     with TestClient(app) as restarted:

@@ -51,6 +51,84 @@ def test_index_page_is_served():
     assert "canvas" in r.text.lower()
 
 
+def test_render_combines_independent_surface_materials_and_keeps_objects():
+    base = np.full((100, 100, 3), 120, np.uint8)
+    _, photo = cv2.imencode('.png', base)
+    _, red = cv2.imencode('.png', np.full((30, 30, 3), (20, 20, 220), np.uint8))
+    _, blue = cv2.imencode('.png', np.full((30, 30, 3), (220, 20, 20), np.uint8))
+    layers = [
+        {'quad': [[0, 0], [45, 0], [45, 99], [0, 99]], 'face_count': 1,
+         'exclude': [[[10, 40], [30, 40], [30, 60], [10, 60]]]},
+        {'quad': [[55, 0], [99, 0], [99, 99], [55, 99]], 'face_count': 1},
+    ]
+    response = client.post('/render', data={'payload': json.dumps({'layers': layers})},
+        files=[('photo', ('room.png', photo.tobytes(), 'image/png')),
+               ('faces', ('red.png', red.tobytes(), 'image/png')),
+               ('faces', ('blue.png', blue.tobytes(), 'image/png'))])
+    assert response.status_code == 200, response.text[:200]
+    out = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR)
+    assert out[75, 20, 2] > out[75, 20, 0] + 100
+    assert out[75, 75, 0] > out[75, 75, 2] + 100
+    assert np.array_equal(out[50, 20], base[50, 20])
+    assert np.array_equal(out[:, 48:52], base[:, 48:52])
+
+
+def test_render_rejects_a_layer_texture_count_mismatch():
+    response = client.post('/render', data={'payload': json.dumps({'layers': [
+        {'quad': QUAD, 'face_count': 2}]})},
+        files={'photo': ('room.png', photo_bytes(), 'image/png'),
+               'faces': ('face.png', face_bytes(), 'image/png')})
+    assert response.status_code == 422
+    assert 'texture' in response.json()['detail'].lower()
+
+
+def test_tile_direction_turns_grain_and_preserves_rectangular_scale():
+    _, photo = cv2.imencode('.png', np.full((100, 100, 3), 120, np.uint8))
+    face = np.full((60, 20, 3), 220, np.uint8)
+    face[:, :10] = 40
+    _, texture = cv2.imencode('.png', face)
+    outputs = []
+    for rotation in (0, 90):
+        body = {'quad': [[0, 0], [99, 0], [99, 99], [0, 99]], 'tile_mm': [20, 60],
+                'floor_mm': [100, 100], 'tile_rotation': rotation, 'grout_mm': 0}
+        response = client.post('/render', data={'payload': json.dumps(body)},
+            files={'photo': ('room.png', photo.tobytes(), 'image/png'),
+                   'faces': ('grain.png', texture.tobytes(), 'image/png')})
+        assert response.status_code == 200
+        outputs.append(cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR))
+    assert abs(float(outputs[0][30, 5].mean()) - float(outputs[0][30, 15].mean())) > 100
+    assert abs(float(outputs[1][5, 30].mean()) - float(outputs[1][15, 30].mean())) > 100
+    assert abs(float(outputs[1][5, 5].mean()) - float(outputs[1][5, 15].mean())) < 2
+
+
+def test_surface_selection_passes_original_photo_points_and_exclusions(monkeypatch):
+    from bench import app as module
+
+    def select(base, points, labels):
+        assert base.shape == room_with_objects().shape
+        assert points == [[300, 700], [900, 600]]
+        assert labels == [1, 0]
+        return {'floor_boundary': [[0, 500], [1300, 500], [1300, 899], [0, 899]], 'exclude': []}
+
+    monkeypatch.setattr(module, 'select_surface', select, raising=False)
+    response = client.post('/select-surface',
+        files={'photo': ('room.png', photo_bytes(), 'image/png')},
+        data={'payload': json.dumps({'points': [[300, 700], [900, 600]], 'labels': [1, 0], 'kind': 'wall'})})
+    assert response.status_code == 200
+    assert len(response.json()['floor_boundary']) == 4
+    assert 'plane' not in response.json()
+
+
+@pytest.mark.parametrize('body', [[], {'points': [], 'labels': []},
+    {'points': [[300, 700]], 'labels': [0]},
+    {'points': [[float('inf'), 700]], 'labels': [1]}])
+def test_invalid_surface_prompts_are_rejected(body):
+    response = client.post('/select-surface',
+        files={'photo': ('room.png', photo_bytes(), 'image/png')},
+        data={'payload': json.dumps(body)})
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize("filename, media_types", [
     ("styles.css", {"text/css"}),
     ("app.js", {"text/javascript", "application/javascript"}),

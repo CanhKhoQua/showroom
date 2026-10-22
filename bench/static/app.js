@@ -7,6 +7,7 @@ let drawnPhoto = null;
 const roomPresets = [];
 const materialCatalogue = [];
 const state = { image: null, photo: null, photoUrl: null, roomId: null, quad: [], autoPlane: false, boundary: [], boundaryClosed: false, exclusions: [], aiExclusions: [], tool: 'corners', selectedCorner: -1, selectedBoundary: -1, drag: null, painting: null, material: null, customFaces: [], resultUrl: null, compare: false, request: null, version: 0, photoLoad: 0, loadingPhoto: false, textureLoad: 0, loadingTextures: false, detectingFloor: false, busy: false };
+Object.assign(state, { surfaces: [], activeSurfaceId: null, selectionPoints: [], selectingSurface: false });
 
 function status(message, kind = 'ready') {
   $('status-text').textContent = message;
@@ -16,12 +17,14 @@ function status(message, kind = 'ready') {
 function setBusy(busy) {
   state.busy = busy;
   $('render-overlay').hidden = !busy;
-  $('render-overlay').querySelector('strong').textContent = state.detectingFloor ? 'Finding the floor' : 'Creating your preview';
-  $('render-overlay').querySelector('span:last-child').textContent = state.detectingFloor ? 'Preparing an outline you can adjust.' : 'Keeping the room’s light and perspective.';
+  $('render-overlay').querySelector('strong').textContent = state.selectingSurface ? 'Selecting your surface' : state.detectingFloor ? 'Finding the floor' : 'Creating your preview';
+  $('render-overlay').querySelector('span:last-child').textContent = state.selectingSurface || state.detectingFloor ? 'Preparing an outline you can adjust.' : 'Keeping the room’s light and perspective.';
   $('go').disabled = busy || state.loadingPhoto || state.loadingTextures;
   $('go').setAttribute('aria-busy', String(busy || state.loadingPhoto || state.loadingTextures));
   $('render-label').textContent = busy ? state.detectingFloor ? 'Finding the floor…' : 'Creating preview…' : state.loadingPhoto ? 'Opening room…' : state.loadingTextures ? 'Opening textures…' : 'Create preview';
   $('detect-floor').disabled = !state.photo || busy || state.loadingPhoto || state.loadingTextures;
+  ['surface-select', 'add-floor', 'add-wall'].forEach(id => { $(id).disabled = busy || state.loadingPhoto || state.loadingTextures; });
+  $('remove-surface').disabled = busy || state.loadingPhoto || state.loadingTextures || state.surfaces.length < 2;
 }
 
 function invalidate(changed = true) {
@@ -30,6 +33,7 @@ function invalidate(changed = true) {
   if (state.request) state.request.abort();
   state.request = null;
   state.detectingFloor = false;
+  state.selectingSurface = false;
   setBusy(false);
   if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
   state.resultUrl = null;
@@ -106,6 +110,11 @@ function draw() {
   outline(state.boundary, state.boundaryClosed ? '#79927228' : 'transparent', '#52704b', 2 * scale, state.boundaryClosed);
   [...state.aiExclusions, ...state.exclusions].forEach(poly => outline(poly, '#ae604930', '#d69883', scale));
   if (state.painting) outline(state.painting, '#ae604947', '#ffcfb3', 1.5 * scale);
+  if (state.tool === 'select') state.selectionPoints.forEach(([x, y, label]) => {
+    context.beginPath(); context.arc(x, y, 5 * scale, 0, Math.PI * 2);
+    context.fillStyle = label ? '#327d4b' : '#bd4939'; context.fill();
+    context.strokeStyle = '#fff'; context.lineWidth = 1.5 * scale; context.stroke();
+  });
   const points = state.tool === 'outline' ? state.boundary : state.tool === 'corners' ? state.quad : [];
   const selected = state.tool === 'outline' ? state.selectedBoundary : state.selectedCorner;
   points.forEach(([x, y], index) => {
@@ -126,11 +135,13 @@ function draw() {
 
 function updateEditor() {
   syncOutlinePlane();
-  $('corner-count').textContent = state.tool === 'outline' ? `${state.boundary.length} points` : `${state.quad.length}/4`;
+  $('corner-count').textContent = state.tool === 'select' ? `${state.selectionPoints.length} clicks` : state.tool === 'outline' ? `${state.boundary.length} points` : `${state.quad.length}/4`;
   $('step-photo').classList.toggle('complete', Boolean(state.image));
   $('step-floor').classList.toggle('complete', validFloor() && (!state.boundary.length || state.boundaryClosed));
   $('step-material').classList.toggle('complete', Boolean(state.material || state.customFaces.length));
   $('undo').disabled = state.tool === 'outline' ? !state.boundary.length : !state.quad.length && !state.exclusions.length && !state.aiExclusions.length;
+  if (state.tool === 'select') $('undo').disabled = !state.selectionPoints.length;
+  $('point-controls').hidden = state.tool !== 'select' || state.compare;
   $('reset').disabled = !state.quad.length && !state.boundary.length && !state.exclusions.length && !state.aiExclusions.length;
   $('detect-floor').disabled = !state.photo || state.busy || state.loadingPhoto || state.loadingTextures;
   $('finish-outline').hidden = state.tool !== 'outline' || state.boundaryClosed;
@@ -138,6 +149,9 @@ function updateEditor() {
   if (state.compare) {
     $('hint-title').textContent = 'A new look, in the same room';
     $('hint-text').textContent = 'Move the slider to compare. Switch to Edit floor to refine the area.';
+  } else if (state.tool === 'select') {
+    $('hint-title').textContent = 'Choose exactly what gets tiled';
+    $('hint-text').textContent = 'Include a point inside the floor or wall. Exclude points on rugs, furniture or adjoining surfaces. Use Perspective to align the tiles.';
   } else if (state.tool === 'outline') {
     $('hint-title').textContent = state.boundaryClosed ? 'Your floor outline is ready' : 'Trace every bend in the floor';
     $('hint-text').textContent = state.boundaryClosed ? 'Drag any outline point to refine the edge. Use Perspective to align the material, then create a preview.' : 'Click around the visible floor, adding a point at each bend. Choose Finish outline, press Enter, or click the first point to close it.';
@@ -171,6 +185,7 @@ function setTool(tool) {
   $('corners-tool').setAttribute('aria-pressed', String(tool === 'corners'));
   $('outline-tool').setAttribute('aria-pressed', String(tool === 'outline'));
   $('protect-tool').setAttribute('aria-pressed', String(tool === 'protect'));
+  $('select-tool').setAttribute('aria-pressed', String(tool === 'select'));
   updateEditor();
 }
 
@@ -188,10 +203,14 @@ guides.addEventListener('pointerdown', event => {
   guides.focus({ preventScroll: true });
   guides.setPointerCapture(event.pointerId);
   const point = position(event);
-  if (state.tool === 'protect') {
+  if (state.tool === 'select') {
+    window.showroomSurfaces.pick(point);
+  } else if (state.tool === 'protect') {
+    state.selectionPoints = [];
     invalidate();
     state.painting = [point];
   } else if (state.tool === 'outline') {
+    state.selectionPoints = [];
     const hitRadius = 18 * canvas.width / bounds.width;
     const distances = state.boundary.map(p => Math.hypot(p[0] - point[0], p[1] - point[1]));
     const nearest = distances.indexOf(Math.min(...distances));
@@ -239,7 +258,7 @@ guides.addEventListener('keydown', event => {
   if (!state.compare && state.tool === 'outline' && event.key === 'Enter') { event.preventDefault(); finishFloorOutline(); return; }
   const directions = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const selected = state.tool === 'outline' ? state.selectedBoundary : state.selectedCorner;
-  if (state.compare || state.tool === 'protect' || selected < 0 || !directions[event.key]) return;
+  if (state.compare || state.tool === 'protect' || state.tool === 'select' || selected < 0 || !directions[event.key]) return;
   event.preventDefault();
   invalidate();
   const amount = event.shiftKey ? 10 : 1;
@@ -293,8 +312,8 @@ $('result-layer').addEventListener('pointermove', event => {
   if (state.compare && event.pointerId === comparisonPointer) compareAt(event);
 });
 ['pointerup', 'pointercancel'].forEach(type => $('result-layer').addEventListener(type, () => { comparisonPointer = null; }));
-$('reset').onclick = () => { invalidate(); state.quad = []; state.autoPlane = false; state.boundary = []; state.boundaryClosed = false; state.exclusions = []; state.aiExclusions = []; state.selectedCorner = -1; state.selectedBoundary = -1; setTool('corners'); status('Select the four floor corners'); };
-$('undo').onclick = () => { invalidate(); if (state.tool === 'outline') { if (!state.boundaryClosed) state.boundary.pop(); state.boundaryClosed = false; state.selectedBoundary = -1; } else if (state.exclusions.length) state.exclusions.pop(); else if (state.aiExclusions.length) state.aiExclusions.pop(); else { state.autoPlane = false; state.quad.pop(); state.selectedCorner = -1; } fitImage(); updateEditor(); status(state.tool === 'outline' ? 'Continue tracing, then finish the outline.' : state.quad.length === 4 ? 'Ready to preview' : 'Select the four floor corners'); };
+$('reset').onclick = () => { invalidate(); state.quad = []; state.autoPlane = false; state.boundary = []; state.boundaryClosed = false; state.exclusions = []; state.aiExclusions = []; state.selectionPoints = []; state.selectedCorner = -1; state.selectedBoundary = -1; setTool('select'); status('Click inside this surface to select it.'); };
+$('undo').onclick = () => { if (state.tool === 'select') { state.selectionPoints.pop(); window.showroomSurfaces.refine(); return; } invalidate(); if (state.tool === 'outline') { state.selectionPoints = []; if (!state.boundaryClosed) state.boundary.pop(); state.boundaryClosed = false; state.selectedBoundary = -1; } else if (state.exclusions.length) state.exclusions.pop(); else if (state.aiExclusions.length) state.aiExclusions.pop(); else { state.autoPlane = false; state.quad.pop(); state.selectedCorner = -1; } fitImage(); updateEditor(); status(state.tool === 'outline' ? 'Continue tracing, then finish the outline.' : state.quad.length === 4 ? 'Ready to preview' : 'Select the four surface corners'); };
 
 async function detectFloor() {
   let controller = null, version = state.version;
@@ -368,8 +387,9 @@ async function loadPhoto(blob, name, preset, token) {
     else $('photo-credit').removeAttribute('href');
   }
   updateRooms();
+  window.showroomSurfaces?.reset();
   window.dispatchEvent(new Event('floorchange'));
-  setTool(state.boundaryClosed ? 'outline' : 'corners');
+  setTool(state.boundaryClosed ? 'outline' : 'select');
   fitImage();
   status(preset ? 'Sample room ready. Create your first preview.' : 'Photo loaded. Select the four floor corners.');
   return true;
@@ -518,8 +538,7 @@ function validateSettings() {
   return values;
 }
 
-function validFloor() {
-  const q = state.quad;
+function validFloor(q = state.quad) {
   if (q.length !== 4) return false;
   const turns = q.map((p, i) => { const next = q[(i + 1) % 4], after = q[(i + 2) % 4]; return (next[0] - p[0]) * (after[1] - next[1]) - (next[1] - p[1]) * (after[0] - next[0]); });
   return turns.every(value => value > 0) && Math.abs(q.reduce((sum, p, i) => sum + p[0] * q[(i + 1) % 4][1] - p[1] * q[(i + 1) % 4][0], 0)) > 100;
@@ -531,14 +550,26 @@ async function createPreview() {
     if (state.loadingPhoto) throw new Error('Wait for the room photo to finish opening.');
     if (state.loadingTextures) throw new Error('Wait for the texture images to finish opening.');
     if (!state.photo) throw new Error('Upload a room photo, or use Try demo to get started.');
-    if (state.boundary.length && !state.boundaryClosed) throw new Error('Finish the floor outline before creating a preview.');
-    if (!validFloor()) throw new Error('Select four floor corners clockwise: far-left, far-right, near-right, near-left.');
+    if (state.boundary.length && !state.boundaryClosed) throw new Error('Finish the surface outline before creating a preview.');
+    if (!validFloor()) throw new Error('Select four surface corners clockwise: far-left, far-right, near-right, near-left.');
     if (state.boundaryClosed && state.boundary.some(([x, y]) => state.quad.some(([ax, ay], index) => {
       const [bx, by] = state.quad[(index + 1) % 4];
       return (bx - ax) * (y - ay) - (by - ay) * (x - ax) < -2 * Math.hypot(bx - ax, by - ay);
-    }))) throw new Error('The floor outline extends beyond the perspective plane. Move the Perspective corners outside the outline, then try again.');
+    }))) throw new Error('The surface outline extends beyond the perspective plane. Move the Perspective corners outside the outline, then try again.');
     if (!state.material && !state.customFaces.length) throw new Error('Choose a material or upload your own texture.');
-    const values = validateSettings();
+    validateSettings();
+    const surfaces = window.showroomSurfaces.capture().filter(surface => surface.quad.length || surface.boundary.length);
+    for (const surface of surfaces) {
+      if (!validFloor(surface.quad) || (surface.boundary.length && !surface.boundary_closed)) throw new Error(`${surface.name}: finish its outline and align four Perspective corners.`);
+      for (const id of ['floorW', 'floorD', 'tileW', 'tileD', 'groutMm']) {
+        const value = Number(surface.settings[id]), input = $(id);
+        if (!Number.isFinite(value) || value < Number(input.min) || value > Number(input.max)) throw new Error(`${surface.name}: check its dimensions and grout size.`);
+      }
+      if (surface.boundary_closed && surface.boundary.some(([x, y]) => surface.quad.some(([ax, ay], index) => {
+        const [bx, by] = surface.quad[(index + 1) % 4];
+        return (bx - ax) * (y - ay) - (by - ay) * (x - ax) < -2 * Math.hypot(bx - ax, by - ay);
+      }))) throw new Error(`${surface.name}: move its Perspective corners outside the selected outline.`);
+    }
     invalidate(false);
     version = state.version;
     controller = new AbortController();
@@ -546,15 +577,25 @@ async function createPreview() {
     setBusy(true); status('Rendering your selected material…', 'busy');
     const started = performance.now(), form = new FormData();
     form.append('photo', state.photo, 'room-photo');
-    const faces = state.customFaces.length ? state.customFaces : await Promise.all(state.material.faces.map(async (url, index) => {
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) throw new Error('The material images could not be loaded. Please try another material.');
-      return new File([await response.blob()], `sample-${index}.jpg`, { type: 'image/jpeg' });
-    }));
-    if (version !== state.version) return;
-    faces.forEach(face => form.append('faces', face));
-    const colour = $('groutColour').value.match(/[a-f\d]{2}/gi).map(value => parseInt(value, 16)).reverse();
-    form.append('payload', JSON.stringify({ quad: state.quad, floor_boundary: state.boundaryClosed ? state.boundary : null, exclude: [...state.aiExclusions, ...state.exclusions], tile_mm: [values.tileW, values.tileD], floor_mm: [values.floorW * 1000, values.floorD * 1000], grout_mm: values.groutMm, grout_bgr: colour, layout: $('layout').value, auto: $('auto').checked ? 'colour-deviation' : 'none' }));
+    const layers = [];
+    for (const surface of surfaces) {
+      const material = materialCatalogue.find(item => item.id === surface.material_id);
+      if (!surface.custom_faces.length && !material) throw new Error(`${surface.name}: choose a material.`);
+      const faces = surface.custom_faces.length ? surface.custom_faces : await Promise.all(material.faces.map(async (url, index) => {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error('The material images could not be loaded. Please try another material.');
+        return new File([await response.blob()], `sample-${index}.jpg`, { type: 'image/jpeg' });
+      }));
+      if (version !== state.version) return;
+      faces.forEach(face => form.append('faces', face));
+      const settings = surface.settings;
+      layers.push({ quad: surface.quad, floor_boundary: surface.boundary_closed ? surface.boundary : null,
+        exclude: [...surface.ai_exclusions, ...surface.exclusions], face_count: faces.length,
+        tile_mm: [Number(settings.tileW), Number(settings.tileD)], floor_mm: [Number(settings.floorW) * 1000, Number(settings.floorD) * 1000],
+        grout_mm: Number(settings.groutMm), grout_bgr: settings.groutColour.match(/[a-f\d]{2}/gi).map(value => parseInt(value, 16)).reverse(),
+        layout: settings.layout, tile_rotation: Number(settings.tileRotation || 0), auto: settings.auto ? 'colour-deviation' : 'none' });
+    }
+    form.append('payload', JSON.stringify({ layers }));
     const response = await fetch('/render', { method: 'POST', body: form, signal: controller.signal });
     if (!response.ok) { let detail = ''; try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail; } catch {} throw new Error(`Preview failed (${response.status}). ${detail || 'Please try again or choose another photo.'}`); }
     const blob = await response.blob();

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from renderer.compose import lighting_gain, render, soft_clip
 from renderer.geometry import quad_mask_of
 from renderer.masking import build_mask
@@ -78,6 +79,93 @@ def test_lighting_retains_a_narrow_shadow_without_old_floor_grain():
 
     assert gain[160, 240] < 0.85 * gain[100, 240]
     assert gain[40:100, 80:400].std() < 0.01
+
+
+def test_lighting_gain_preserves_deep_shadow_irradiance():
+    base = np.full((160, 400, 3), 200, np.uint8)
+    base[:, 240:] = 80
+    mask = np.full(base.shape[:2], 255, np.uint8)
+
+    gain = lighting_gain(base, mask, sigma=12)
+
+    # sRGB 80 and 200 represent linear light levels 0.0802 and 0.5776.
+    assert 0.12 < gain[80, 350] / gain[80, 80] < 0.16
+
+
+def test_lighting_gain_keeps_contact_shadow_depth():
+    y = np.arange(240, dtype=np.float32)[:, None]
+    gray = 150 * (1 - 0.5 * np.exp(-((y - 120) / 6) ** 2))
+    base = np.repeat(np.repeat(gray[..., None], 3, axis=2), 320, axis=1)
+    mask = np.full(base.shape[:2], 255, np.uint8)
+
+    gain = lighting_gain(base.astype(np.uint8), mask)
+
+    assert gain[120, 160] / gain[60, 160] < 0.40
+
+
+@pytest.mark.parametrize("color", [(235, 235, 235), (32, 110, 235), (20, 40, 60)])
+def test_render_preserves_material_color_in_uniform_light(color):
+    base = np.full((100, 140, 3), 120, np.uint8)
+    sheet = np.full((40, 60, 3), color, np.uint8)
+    quad = [(10, 10), (130, 10), (130, 90), (10, 90)]
+
+    out = render(base, sheet, quad)
+
+    assert np.allclose(out[50, 70], color, atol=1)
+
+
+def test_render_blends_partial_coverage_in_linear_light():
+    base = np.zeros((80, 100, 3), np.uint8)
+    sheet = np.full((40, 60, 3), 255, np.uint8)
+    mask = np.full(base.shape[:2], 128, np.uint8)
+    quad = [(0, 0), (100, 0), (100, 80), (0, 80)]
+
+    out = render(base, sheet, quad, mask=mask, strength=0)
+
+    # Half the light from white is approximately sRGB 188, not sRGB 128.
+    assert np.allclose(out[40, 50], 188, atol=2)
+
+
+def test_render_resamples_texture_edges_in_linear_light():
+    base = np.full((20, 20, 3), 120, np.uint8)
+    sheet = np.zeros((2, 2, 3), np.uint8)
+    sheet[:, 1] = 255
+    quad = [(0, 0), (4, 0), (4, 4), (0, 4)]
+
+    out = render(base, sheet, quad, feather=0)
+
+    # Photo x=1 maps halfway between black and white texture pixels.
+    assert np.allclose(out[2, 1], 188, atol=1)
+
+
+def test_render_is_invariant_to_unselected_photo_padding():
+    y, x = np.mgrid[:120, :180]
+    base = np.repeat((80 + x // 2 + y // 4).astype(np.uint8)[..., None], 3, axis=2)
+    mask = np.zeros(base.shape[:2], np.uint8)
+    mask[25:105, 35:165] = 255
+    quad = [(35, 25), (165, 25), (165, 105), (35, 105)]
+    sheet_y, sheet_x = np.mgrid[:60, :90]
+    sheet = np.stack((40 + sheet_x, 80 + sheet_y, 120 + sheet_x), axis=2).astype(np.uint8)
+    offset_y, offset_x = 150, 90
+    padded = np.pad(base, ((offset_y, 210), (offset_x, 260), (0, 0)), constant_values=255)
+    padded_mask = np.pad(mask, ((offset_y, 210), (offset_x, 260)))
+    padded_quad = [(x + offset_x, y + offset_y) for x, y in quad]
+
+    out = render(base, sheet, quad, mask=mask)
+    padded_out = render(padded, sheet, padded_quad, mask=padded_mask)
+
+    assert np.array_equal(out, padded_out[offset_y:offset_y + 120,
+                                          offset_x:offset_x + 180])
+
+
+def test_render_empty_mask_returns_original_pixels():
+    base = np.full((80, 100, 3), 120, np.uint8)
+    mask = np.zeros(base.shape[:2], np.uint8)
+    sheet = np.full((40, 60, 3), 235, np.uint8)
+
+    out = render(base, sheet, [(0, 0), (100, 0), (100, 80), (0, 80)], mask=mask)
+
+    assert np.array_equal(out, base)
 
 
 def test_render_preserves_every_unselected_pixel_at_mask_boundaries():

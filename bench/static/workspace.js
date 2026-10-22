@@ -1,16 +1,18 @@
 'use strict';
 
 window.showroomWorkspace = (() => {
-  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour'];
+  const fields = ['floorW', 'floorD', 'tileW', 'tileD', 'layout', 'groutMm', 'groutColour', 'tileRotation'];
 
   function capture() {
     if (!state.photo || state.loadingPhoto || state.loadingTextures) throw new Error('Wait for the room photo and textures to finish opening.');
+    if (state.selectingSurface) throw new Error('Wait for the surface selection to finish before saving.');
     return structuredClone({
       name: $('room-name').textContent, photo: state.photo, room_id: state.roomId,
       quad: state.quad, boundary: state.boundary, boundary_closed: state.boundaryClosed,
       auto_plane: state.autoPlane, exclusions: state.exclusions, ai_exclusions: state.aiExclusions,
       material_id: state.material?.id || null, custom_faces: state.customFaces,
       settings: { ...Object.fromEntries(fields.map(id => [id, $(id).value])), auto: $('auto').checked },
+      surfaces: window.showroomSurfaces.capture(), active_surface_id: state.activeSurfaceId,
     });
   }
 
@@ -26,7 +28,9 @@ window.showroomWorkspace = (() => {
 
   async function serialize(snapshot) {
     return { ...snapshot, photo: await imageData(snapshot.photo),
-      custom_faces: await Promise.all(snapshot.custom_faces.map(imageData)) };
+      custom_faces: await Promise.all(snapshot.custom_faces.map(imageData)),
+      surfaces: await Promise.all((snapshot.surfaces || []).map(async surface => ({ ...surface,
+        custom_faces: await Promise.all(surface.custom_faces.map(imageData)) }))) };
   }
 
   async function imageBlob(image) {
@@ -41,7 +45,10 @@ window.showroomWorkspace = (() => {
     state.loadingPhoto = true;
     invalidate(false);
     try {
-      const [photo, ...faces] = await Promise.all([imageBlob(snapshot.photo), ...snapshot.custom_faces.map(imageBlob)]);
+      const [photo, faces, surfaces] = await Promise.all([imageBlob(snapshot.photo),
+        Promise.all(snapshot.custom_faces.map(imageBlob)),
+        Promise.all((snapshot.surfaces || []).map(async surface => ({ ...surface,
+          custom_faces: await Promise.all(surface.custom_faces.map(imageBlob)) })))]);
       const preset = roomPresets.find(room => room.id === snapshot.room_id);
       if (!await loadPhoto(photo, snapshot.name, preset, token)) return false;
       Object.assign(state, {
@@ -51,11 +58,13 @@ window.showroomWorkspace = (() => {
         material: material || null, customFaces: faces,
       });
       fields.forEach(id => { if (snapshot.settings[id] !== undefined) $(id).value = snapshot.settings[id]; });
+      if (snapshot.settings.tileRotation === undefined) $('tileRotation').value = '0';
       $('auto').checked = snapshot.settings.auto === true;
       $('colour-label').textContent = $('groutColour').value.toUpperCase();
       $('custom-note').textContent = faces.length ? `${faces.length} texture ${faces.length === 1 ? 'image' : 'images'} selected` : 'Add one or more tile images';
       $('faces').value = '';
-      updateMaterials(); setTool(state.boundaryClosed ? 'outline' : 'corners'); fitImage();
+      window.showroomSurfaces.restore(surfaces, snapshot.active_surface_id);
+      updateMaterials(); setTool(state.selectionPoints.length ? 'select' : state.boundaryClosed ? 'outline' : 'select'); fitImage();
       window.dispatchEvent(new Event('floorchange'));
       window.dispatchEvent(new Event('projectchange'));
       status('Saved room loaded. Create a preview to see its selected material.');

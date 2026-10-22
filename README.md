@@ -1,6 +1,6 @@
 # Showroom render bench
 
-A local tool for testing floor tile renders on room photos.
+A local tool for testing floor and wall tile renders on room photos.
 
 ## Run with Docker
 
@@ -23,11 +23,25 @@ resets the previous outline and preview; custom texture selections are retained.
 Floor dimensions in the presets are illustrative estimates, not measurements
 for a quote. Uploading a customer photo clears the preset selection.
 
-To use your own photo, click **Upload room** and mark the floor corners in this
+To use your own photo, click **Upload room**, choose **Point select**, and click
+**Include area** before clicking inside the floor or wall. Switch to
+**Exclude object** and click rugs, furniture, or adjoining surfaces that should
+remain unchanged. Add points to refine the selection; Undo removes the last
+point. EdgeSAM runs on the local CPU and reuses the current photo embedding.
+Review the outline before creating a preview.
+
+Choose **Add floor** or **Add wall** to work on another surface in the same
+photo. Each surface retains its own selection, object protection, material,
+custom texture faces, dimensions, tile direction, and perspective. Switch
+between them using **Editing surface**. Create preview combines all started
+surfaces; untouched empty surfaces are skipped. Remove surface deletes only
+the selected layer. Projects store all surfaces and reopen the active one.
+
+Use **Perspective** to mark four corners in this
 order: far-left, far-right, near-right, near-left. Drag the handles to align
 the guide grid with the room's floor edges. Corners may extend outside the
 photo when the floor plane continues beyond its crop. For an L-shaped floor
-or other uneven edges, choose **Floor outline**, click at each bend, then
+or other uneven edges, choose **Outline**, click at each bend, then
 choose **Finish outline**, press Enter, or click the first point to close it.
 The outline can have more than four points. Drag a point or use the arrow
 keys to refine it; Undo reopens the outline for adding points. If you trace
@@ -41,6 +55,22 @@ texture faces and set the tile dimensions in millimetres and floor dimensions
 in metres.
 For rectangular tiles, **Half offset** staggers joints along the longer side,
 including upright wood planks, while retaining the source grain direction.
+**Tile direction** turns the material by 90 degrees while retaining physical
+tile dimensions. Enter the measured width and depth of a floor, or width and
+height of a wall. The initial wall perspective is a selection bounding box;
+align its corners with the actual wall plane before judging the tile shape.
+
+Texture interpolation, illumination, and edge blending use linear light.
+Low-frequency lighting and contact shadows come from the original surface;
+unselected pixels remain unchanged. Float processing is restricted to the
+selected surface bounds to reduce memory and CPU use on large photos.
+
+The two [EdgeSAM ONNX weights](https://github.com/chongzhou96/EdgeSAM) total
+about 36 MiB and are pinned by revision and SHA-256 in the Dockerfile. They run
+with ONNX Runtime's CPU provider using two threads, without PyTorch, CUDA, or an
+external image service. The [S-Lab license](https://github.com/chongzhou96/EdgeSAM/blob/master/LICENSE)
+permits non-commercial use; this bench uses the models for evaluation. The
+complete license is in `renderer/edgesam-license.txt`.
 
 For an automatic starting point, upload the room and click **Detect floor**.
 SegFormer B4 runs locally on two CPU threads and returns an editable outline of
@@ -56,7 +86,7 @@ detail, with a roughly 16-megapixel tile sheet limit, to retain grain detail.
 When no Perspective corners are set, detection also estimates the floor plane:
 vertical edges such as wall corners and door frames give the camera tilt, and
 an assumed phone lens (26 mm equivalent) held 1.4 m above the floor gives the
-scale. The plane fills **Floor dimensions** with its true size, so tiles keep
+scale. The plane fills **Surface dimensions** with its estimated size, so tiles keep
 their shape; changing those values afterwards stretches the tiles. Without
 usable vertical edges the tilt is a 45° guess. Check the result in
 **Perspective**. Repeating detection retains hand-drawn object protection and
@@ -221,6 +251,13 @@ test fixture in the ignored `artifacts/server-project-check/` directory.
 They cover save/reload, separate browser sessions, LAN share links, reopening
 rooms, conflicting saves, save-copy recovery, WebKit mobile rendering and
 blocking edits while project data or the quote is still loading.
+
+`node tests/browser_surfaces.cjs` covers CPU click selection, exclusion and undo,
+independent floor/wall settings, combined previews, save-copy/reload, PNG export,
+and WebKit touch interaction. Set `SHOWROOM_TEST_PROJECT` to an existing photo
+project ID to use it as a fixture; the check saves a copy and keeps the source
+unchanged. `node tests/browser_surface_races.cjs` exercises delayed script
+initialization and custom-texture ownership during decoding.
 
 ## Logs and shutdown
 

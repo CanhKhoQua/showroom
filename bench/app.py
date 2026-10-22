@@ -23,6 +23,7 @@ from bench.projects import router as project_router
 from renderer.compose import render
 from renderer.floor_detection import detect_floor
 from renderer.floor_plane import estimate_floor_plane
+from renderer.surface_selection import select_surface
 from renderer.masking import build_mask
 from renderer.tiles import build_tile_sheet, tile_sheet_scale
 
@@ -67,15 +68,7 @@ async def normalize_image(file: UploadFile = File(...)):
     return Response(buf.tobytes(), media_type="image/png")
 
 
-@app.post("/render")
-async def do_render(payload: str = Form(...),
-                    photo: UploadFile = File(...),
-                    faces: list[UploadFile] = File(...)):
-    try:
-        body = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(422, f"payload is not JSON: {exc}")
-
+def _render_surface(base: np.ndarray, face_images: list[np.ndarray], body: dict):
     quad = body.get("quad") or []
     if len(quad) != 4:
         raise HTTPException(422, "quad needs exactly 4 points, ordered "
@@ -87,13 +80,17 @@ async def do_render(payload: str = Form(...),
     if auto not in VALID_AUTO:
         raise HTTPException(422, f"auto must be one of {sorted(VALID_AUTO)}")
 
-    base = _decode(await photo.read())
-    face_images = [_decode(await f.read()) for f in faces]
     if not face_images:
         raise HTTPException(422, "at least one texture face is required")
 
     tile_mm = tuple(body.get("tile_mm", (600, 600)))
     floor_mm = tuple(body.get("floor_mm", (4000, 3000)))
+    rotation = body.get('tile_rotation', 0)
+    if rotation not in (0, 90):
+        raise HTTPException(422, 'tile rotation must be 0 or 90 degrees')
+    if rotation == 90:
+        face_images = [cv2.rotate(face, cv2.ROTATE_90_CLOCKWISE) for face in face_images]
+        tile_mm = tile_mm[::-1]
     scale = (float(body["px_per_mm"]) if "px_per_mm" in body else
              tile_sheet_scale(face_images, tile_mm, floor_mm, quad))
     sheet = build_tile_sheet(
@@ -110,11 +107,61 @@ async def do_render(payload: str = Form(...),
                       floor_boundary=floor_boundary)
     out = render(base, sheet, [tuple(p) for p in quad], mask=mask,
                  strength=float(body.get("strength", 1.0)))
+    return out, mask
+
+
+@app.post("/render")
+async def do_render(payload: str = Form(...),
+                    photo: UploadFile = File(...),
+                    faces: list[UploadFile] = File(...)):
+    try:
+        body = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, f"payload is not JSON: {exc}") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(422, 'payload must be an object')
+    base = _decode(await photo.read())
+    face_images = [_decode(await face.read()) for face in faces]
+    layers = body.get('layers')
+    if layers is None:
+        out, _ = await run_in_threadpool(_render_surface, base, face_images, body)
+    else:
+        if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
+            raise HTTPException(422, 'select between 1 and 12 surfaces')
+        counts = [layer.get('face_count') if isinstance(layer, dict) else None for layer in layers]
+        if any(type(count) is not int or count < 1 for count in counts) or sum(counts) != len(face_images):
+            raise HTTPException(422, 'surface texture counts do not match the uploaded textures')
+        out, offset = base.copy(), 0
+        for layer, count in zip(layers, counts):
+            painted, mask = await run_in_threadpool(
+                _render_surface, base, face_images[offset:offset + count], layer)
+            out[mask > 0] = painted[mask > 0]
+            offset += count
 
     ok, buf = cv2.imencode(".png", out)
     if not ok:
         raise HTTPException(500, "failed to encode result")
     return Response(buf.tobytes(), media_type="image/png")
+
+
+@app.post('/select-surface')
+async def find_surface(payload: str = Form(...), photo: UploadFile = File(...)):
+    started = time.perf_counter()
+    try:
+        body = json.loads(payload)
+        if not isinstance(body, dict) or not 1 <= len(body.get('points', [])) <= 64:
+            raise ValueError('Select between 1 and 64 points, starting inside the surface.')
+        if body.get('kind', 'floor') not in {'floor', 'wall'}:
+            raise ValueError('Choose a floor or wall surface.')
+        base = _decode(await photo.read())
+        result = await run_in_threadpool(select_surface, base, body.get('points'), body.get('labels'))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if body.get('estimate_plane') and body.get('kind', 'floor') == 'floor':
+        plane = await run_in_threadpool(estimate_floor_plane, base, result['floor_boundary'])
+        result['floor_boundary'] = plane.pop('floor_boundary')
+        result['plane'] = plane
+    return {**result, 'seconds': round(time.perf_counter() - started, 3)}
 
 
 @app.post("/detect-floor")

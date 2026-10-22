@@ -34,6 +34,24 @@ class Workspace(BaseModel):
     material_id: str | None
     custom_faces: list[ImageData]
     settings: dict[str, str | bool]
+    surfaces: list['Surface'] = Field(default_factory=list, max_length=12)
+    active_surface_id: str | None = None
+
+
+class Surface(BaseModel):
+    id: Name
+    name: Name
+    kind: Literal['floor', 'wall']
+    quad: Annotated[list[Point], Field(max_length=4)]
+    boundary: list[Point]
+    boundary_closed: bool
+    auto_plane: bool
+    exclusions: list[list[Point]]
+    ai_exclusions: list[list[Point]]
+    material_id: str | None
+    custom_faces: list[ImageData]
+    settings: dict[str, str | bool]
+    selection_points: list[tuple[Coordinate, Coordinate, Literal[0, 1]]]
 
 
 class SavedRoom(QuoteRoom):
@@ -84,7 +102,7 @@ def record(row):
 @router.post("/projects", status_code=201)
 def create_project(body: Project, response: Response):
     project_id = secrets.token_urlsafe(32)
-    snapshot = body.model_dump_json()
+    snapshot = body.model_dump_json(exclude_unset=True)
     saved_at = datetime.now(UTC).isoformat()
     with closing(connection()) as db, db:
         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?)",
@@ -106,7 +124,7 @@ def get_project(project_id: str, response: Response):
 
 @router.put("/projects/{project_id}")
 def update_project(project_id: str, body: ProjectUpdate, response: Response):
-    snapshot = body.model_dump_json(exclude={"revision"})
+    snapshot = body.model_dump_json(exclude={"revision"}, exclude_unset=True)
     saved_at = datetime.now(UTC).isoformat()
     with closing(connection()) as db, db:
         changed = db.execute(
